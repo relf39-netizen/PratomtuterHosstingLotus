@@ -1,0 +1,8 @@
+{
+  "requestFramePermissions": [],
+  "name": "Pratom Smart Tutor",
+  "description": "ระบบเรียนรู้และติวเข้มอัจฉริยะสำหรับนักเรียนชั้นประถมศึกษา",
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
