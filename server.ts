@@ -769,7 +769,12 @@ app.post('/api', async (req, res) => {
             });
             
             if (!response.ok) {
-              return res.json({ success: false, error: `HTTP error ${response.status} (${response.statusText})` });
+              const is404 = response.status === 404;
+              return res.json({ 
+                success: false, 
+                is404, 
+                error: is404 ? 'ไม่พบบน Supabase (ข้ามการดึงข้อมูล)' : `HTTP error ${response.status} (${response.statusText})` 
+              });
             }
             
             const rows = await response.json();
@@ -777,7 +782,7 @@ app.post('/api', async (req, res) => {
               return res.json({ success: false, error: 'Response from Supabase is not an array. Please check the API key, URL, and table permissions.' });
             }
             
-            // Check if the table exists in MySQL and get its column list
+            // Check if the table exists in MySQL and get its detailed column list
             let cols;
             try {
               cols = await query(`SHOW COLUMNS FROM \`${table}\``);
@@ -785,7 +790,14 @@ app.post('/api', async (req, res) => {
               return res.json({ success: false, error: `MySQL table error: ${err.message || String(err)}` });
             }
             
-            const allowedCols = cols.map((c: any) => (c.Field || c.field || '').toString()).filter(Boolean);
+            const allowedCols = cols.map((c: any) => ({
+              field: (c.Field || c.field || '').toString(),
+              type: (c.Type || c.type || '').toString().toLowerCase(),
+              nullable: (c.Null || c.null || '').toString().toUpperCase() === 'YES',
+              key: (c.Key || c.key || '').toString().toUpperCase(),
+              default: c.Default || c.default,
+              extra: (c.Extra || c.extra || '').toString().toLowerCase()
+            }));
             
             // Delete existing records to avoid duplicates
             await query(`DELETE FROM \`${table}\``);
@@ -794,10 +806,55 @@ app.post('/api', async (req, res) => {
             for (const row of rows) {
               // Map keys of row to allowed columns
               const filteredRow: any = {};
+              let skipRowId = false;
+
               for (const col of allowedCols) {
-                if (col in row) {
-                  filteredRow[col] = row[col];
+                let val = row[col.field];
+                
+                // 1. Handle auto_increment and primary key integer IDs that might be non-numeric (e.g. string UUIDs)
+                if (col.field === 'id' && (col.extra.includes('auto_increment') || col.type.includes('int'))) {
+                  if (val === undefined || val === null || isNaN(Number(val))) {
+                    // Let MySQL generate the ID auto-incrementally
+                    skipRowId = true;
+                    continue;
+                  } else {
+                    val = parseInt(val, 10);
+                  }
                 }
+
+                // 2. Handle NOT NULL columns when incoming value is null or undefined
+                if (!col.nullable && (val === null || val === undefined)) {
+                  if (col.field === 'username') {
+                    val = `user_${row.id || Math.random().toString(36).substring(2, 10)}`;
+                  } else if (col.field === 'password') {
+                    val = 'password123';
+                  } else if (col.field === 'citizen_id') {
+                    val = '0000000000000';
+                  } else if (col.field === 'school') {
+                    val = 'โรงเรียนทั่วไป';
+                  } else if (col.field === 'grade' || col.field === 'grade_level') {
+                    val = 'ป.1';
+                  } else if (col.field === 'classroom') {
+                    val = '1';
+                  } else if (col.field === 'status') {
+                    val = 'active';
+                  } else if (col.field === 'role') {
+                    val = 'TEACHER';
+                  } else if (col.field === 'category') {
+                    val = 'GENERAL';
+                  } else if (col.field === 'timestamp') {
+                    val = Date.now();
+                  } else {
+                    // Fallback based on SQL type
+                    if (col.type.includes('int') || col.type.includes('double') || col.type.includes('decimal')) {
+                      val = 0;
+                    } else {
+                      val = '';
+                    }
+                  }
+                }
+
+                filteredRow[col.field] = val;
               }
               
               const keys = Object.keys(filteredRow);
@@ -1466,7 +1523,12 @@ app.post('/api', async (req, res) => {
           });
           
           if (!response.ok) {
-            return res.json({ success: false, error: `HTTP error ${response.status} (${response.statusText})` });
+            const is404 = response.status === 404;
+            return res.json({ 
+              success: false, 
+              is404, 
+              error: is404 ? 'ไม่พบบน Supabase (ข้ามการดึงข้อมูล)' : `HTTP error ${response.status} (${response.statusText})` 
+            });
           }
           
           const rows = await response.json();

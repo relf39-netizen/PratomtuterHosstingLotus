@@ -285,11 +285,18 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
             [item.key]: { ...prev[item.key], status: 'success', count: res.count }
           }));
         } else {
-          failedCount++;
-          setMigrationReport((prev: any) => ({
-            ...prev,
-            [item.key]: { ...prev[item.key], status: 'error', error: res.error || 'ดึงข้อมูลไม่สำเร็จ' }
-          }));
+          if (res.is404) {
+            setMigrationReport((prev: any) => ({
+              ...prev,
+              [item.key]: { ...prev[item.key], status: 'skipped', reason: 'ไม่พบตารางบนฐานข้อมูล Supabase เดิม (ข้ามการดึงข้อมูล)' }
+            }));
+          } else {
+            failedCount++;
+            setMigrationReport((prev: any) => ({
+              ...prev,
+              [item.key]: { ...prev[item.key], status: 'error', error: res.error || 'ดึงข้อมูลไม่สำเร็จ' }
+            }));
+          }
         }
       } catch (err: any) {
         failedCount++;
