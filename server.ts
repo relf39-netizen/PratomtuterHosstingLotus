@@ -9,7 +9,7 @@ import mysql from 'mysql2/promise';
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
@@ -1194,9 +1194,15 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🚀 Fullstack Node.js + Vite Server running on port ${PORT}`);
-  });
+  if (isNaN(Number(PORT))) {
+    app.listen(PORT, () => {
+      console.log(`🚀 Fullstack Node.js + Vite Server running on named pipe ${PORT}`);
+    });
+  } else {
+    app.listen(Number(PORT), "0.0.0.0", () => {
+      console.log(`🚀 Fullstack Node.js + Vite Server running on port ${PORT}`);
+    });
+  }
 }
 
 startServer();
