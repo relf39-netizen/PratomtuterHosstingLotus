@@ -1180,10 +1180,18 @@ app.post('/api', async (req, res) => {
 // ⚡ Vite Dev & Static Assets Routing Setup
 // ---------------------------------------------------------------------------
 async function startServer() {
-  const distPath = path.join(process.cwd(), 'dist');
-  const hasDist = fs.existsSync(distPath);
+  const isInsideDist = path.basename(__dirname) === 'dist';
+  let distPath = '';
 
-  if (process.env.NODE_ENV !== "production" && !hasDist) {
+  if (isInsideDist) {
+    distPath = __dirname;
+  } else {
+    distPath = path.join(__dirname, 'dist');
+  }
+
+  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
+
+  if (process.env.NODE_ENV !== "production" && !isInsideDist && !hasDist) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
