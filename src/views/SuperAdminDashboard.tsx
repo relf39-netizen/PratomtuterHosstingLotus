@@ -228,33 +228,92 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
       alert("กรุณากรอกข้อมูล URL และ Key ให้ครบถ้วน");
       return;
     }
+    
     setMigrationLoading(true);
     setMigrationError('');
-    setMigrationReport(null);
-    try {
-      const response = await fetch('/api', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'importFromSupabase',
-          supabaseUrl: migrationUrl,
-          supabaseKey: migrationKey
-        })
-      });
-      const res = await response.json();
-      if (res.success) {
-        setMigrationReport(res.report);
-        alert("ดึงข้อมูลจาก Supabase ย้ายมายังฐานข้อมูล MySQL สำเร็จเสร็จสิ้นแล้วครับ!");
-        // Refresh local stats
-        loadData();
-      } else {
-        setMigrationError(res.error || "เกิดข้อผิดพลาดในการดึงข้อมูล");
-      }
-    } catch (err: any) {
-      setMigrationError(err.message || String(err));
-    } finally {
-      setMigrationLoading(false);
+    
+    const TABLES_TO_IMPORT = [
+      { key: 'app_settings', label: 'ข้อมูลโลโก้และชื่อระบบ (app_settings)' },
+      { key: 'schools', label: 'รายชื่อโรงเรียน (schools)' },
+      { key: 'classrooms', label: 'ห้องเรียนทั้งหมด (classrooms)' },
+      { key: 'students', label: 'บัญชีรายชื่อนักเรียน (students)' },
+      { key: 'teachers', label: 'บัญชีรายชื่อคุณครู (teachers)' },
+      { key: 'subjects', label: 'กลุ่มวิชาเรียน (subjects)' },
+      { key: 'assignments', label: 'แบบฝึกหัด/การบ้าน (assignments)' },
+      { key: 'questions', label: 'ธนาคารข้อสอบ (questions)' },
+      { key: 'exam_results', label: 'คะแนนการทำแบบทดสอบ (exam_results)' },
+      { key: 'registration_requests', label: 'คำร้องสมัครสมาชิกคุณครู (registration_requests)' },
+      { key: 'finance_accounts', label: 'บัญชีการเงินของโรงเรียน (finance_accounts)' },
+      { key: 'finance_transactions', label: 'รายการธุรกรรมทางการเงิน (finance_transactions)' },
+      { key: 'tpat_tgat_questions', label: 'คลังข้อสอบ TPAT/TGAT (tpat_tgat_questions)' }
+    ];
+
+    // Initialize report
+    const initialReport: any = {};
+    for (const item of TABLES_TO_IMPORT) {
+      initialReport[item.key] = { status: 'pending', label: item.label };
     }
+    setMigrationReport(initialReport);
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    for (const item of TABLES_TO_IMPORT) {
+      // Set current table status to running
+      setMigrationReport((prev: any) => ({
+        ...prev,
+        [item.key]: { ...prev[item.key], status: 'running' }
+      }));
+
+      try {
+        const response = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'importSingleTableFromSupabase',
+            table: item.key,
+            supabaseUrl: migrationUrl,
+            supabaseKey: migrationKey
+          })
+        });
+        
+        const res = await response.json();
+        if (res.success) {
+          successCount++;
+          setMigrationReport((prev: any) => ({
+            ...prev,
+            [item.key]: { ...prev[item.key], status: 'success', count: res.count }
+          }));
+        } else {
+          failedCount++;
+          setMigrationReport((prev: any) => ({
+            ...prev,
+            [item.key]: { ...prev[item.key], status: 'error', error: res.error || 'ดึงข้อมูลไม่สำเร็จ' }
+          }));
+        }
+      } catch (err: any) {
+        failedCount++;
+        setMigrationReport((prev: any) => ({
+          ...prev,
+          [item.key]: { ...prev[item.key], status: 'error', error: err.message || String(err) }
+        }));
+      }
+      
+      // Short delay for visual tracking of the migration
+      await new Promise(resolve => setTimeout(resolve, 200));
+    }
+
+    setMigrationLoading(false);
+    
+    // Final completion alert
+    if (failedCount === 0) {
+      alert(`ดึงและย้ายข้อมูลจาก Supabase ย้ายมายังฐานข้อมูล MySQL ทั้งหมด ${successCount} ตารางเสร็จสิ้นอย่างสมบูรณ์แบบเรียบร้อยแล้วครับ! 🎉`);
+    } else {
+      alert(`ดึงข้อมูลเสร็จสิ้นแล้ว: สำเร็จ ${successCount} ตาราง, ล้มเหลว ${failedCount} ตาราง ⚠️ กรุณาดูรายละเอียดข้อผิดพลาดของแต่ละตารางในตารางรายงานผลครับ`);
+    }
+
+    // Refresh statistics dashboard
+    loadData();
   };
 
   const filteredSchools = useMemo(() => {
@@ -960,30 +1019,53 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
                     <h4 className="font-black text-slate-800 text-lg mb-4 flex items-center gap-2">
                       <CheckCircle className="text-emerald-500" size={20}/> ผลการดึงข้อมูลรายตาราง
                     </h4>
-                    <div className="bg-slate-50 border border-slate-100 rounded-3xl overflow-hidden shadow-inner max-h-60 overflow-y-auto">
-                      <table className="w-full text-xs text-slate-600">
+                    <div className="bg-slate-50 border border-slate-100 rounded-3xl overflow-hidden shadow-inner max-h-80 overflow-y-auto">
+                      <table className="w-full text-xs text-slate-600 table-auto">
                         <thead className="bg-slate-100 font-black text-[10px] uppercase tracking-wider text-slate-500 border-b">
                           <tr>
-                            <th className="p-3 text-left">ชื่อตาราง (Table)</th>
+                            <th className="p-3 text-left">ตารางข้อมูล (Table)</th>
                             <th className="p-3 text-center">สถานะ (Status)</th>
-                            <th className="p-3 text-right">จำนวนที่บันทึก (Rows)</th>
+                            <th className="p-3 text-right">จำนวนแถว (Rows)</th>
+                            <th className="p-3 text-left">รายละเอียด / ข้อผิดพลาด</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200/60">
                           {Object.entries(migrationReport).map(([table, detail]: [string, any]) => (
                             <tr key={table} className="hover:bg-slate-100/50">
-                              <td className="p-3 font-mono font-bold text-slate-800">{table}</td>
-                              <td className="p-3 text-center">
+                              <td className="p-3 text-left">
+                                <div className="font-bold text-slate-800">{detail.label || table}</div>
+                                <div className="font-mono text-[10px] text-slate-400">{table}</div>
+                              </td>
+                              <td className="p-3 text-center whitespace-nowrap">
                                 {detail.status === 'success' ? (
                                   <span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-emerald-100">สำเร็จ 🟢</span>
+                                ) : detail.status === 'running' ? (
+                                  <span className="bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-indigo-100 inline-flex items-center gap-1 animate-pulse">
+                                    <Loader2 className="animate-spin" size={10}/> กำลังดึงข้อมูล...
+                                  </span>
+                                ) : detail.status === 'pending' ? (
+                                  <span className="bg-slate-100 text-slate-500 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-slate-200">รอดึงข้อมูล ⚪</span>
                                 ) : detail.status === 'skipped' ? (
                                   <span className="bg-amber-50 text-amber-600 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-amber-100" title={detail.reason}>ข้าม 🟡</span>
                                 ) : (
-                                  <span className="bg-red-50 text-red-600 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-red-100" title={detail.reason}>ล้มเหลว 🔴</span>
+                                  <span className="bg-red-50 text-red-600 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-red-100" title={detail.error || detail.reason}>ล้มเหลว 🔴</span>
                                 )}
                               </td>
                               <td className="p-3 text-right font-black font-mono text-slate-700">
                                 {detail.count !== undefined ? detail.count.toLocaleString() : '-'}
+                              </td>
+                              <td className="p-3 text-left">
+                                {detail.status === 'error' ? (
+                                  <span className="text-rose-600 font-bold text-[11px] leading-normal block max-w-xs break-words">{detail.error || detail.reason || 'ดึงข้อมูลไม่สำเร็จ'}</span>
+                                ) : detail.status === 'skipped' ? (
+                                  <span className="text-amber-600 font-medium text-[11px] block max-w-xs break-words">{detail.reason || 'ข้ามการนำเข้า'}</span>
+                                ) : detail.status === 'success' ? (
+                                  <span className="text-emerald-600 font-medium text-[11px]">บันทึกข้อมูลเรียบร้อย</span>
+                                ) : detail.status === 'running' ? (
+                                  <span className="text-indigo-500 font-medium text-[11px] animate-pulse">กำลังดึงข้อมูล...</span>
+                                ) : (
+                                  <span className="text-slate-400 text-[11px]">-</span>
+                                )}
                               </td>
                             </tr>
                           ))}

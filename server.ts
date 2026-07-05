@@ -652,12 +652,24 @@ app.post('/api', async (req, res) => {
                 continue;
               }
               
+              // Get columns dynamically
+              const cols = await query(`SHOW COLUMNS FROM \`${table}\``);
+              const allowedCols = cols.map((c: any) => (c.Field || c.field || '').toString()).filter(Boolean);
+              
               // Insert into MySQL table
               await query(`DELETE FROM \`${table}\``);
               
               for (const row of rows) {
-                const keys = Object.keys(row);
-                const values = Object.values(row);
+                const filteredRow: any = {};
+                for (const col of allowedCols) {
+                  if (col in row) {
+                    filteredRow[col] = row[col];
+                  }
+                }
+                const keys = Object.keys(filteredRow);
+                if (keys.length === 0) continue;
+                
+                const values = Object.values(filteredRow);
                 const sanitizedValues = values.map(val => {
                   if (typeof val === 'boolean') {
                     return val ? 1 : 0;
@@ -679,6 +691,78 @@ app.post('/api', async (req, res) => {
           }
           
           return res.json({ success: true, report });
+        }
+
+        case 'importSingleTableFromSupabase': {
+          const { table, supabaseUrl, supabaseKey } = args;
+          if (!table || !supabaseUrl || !supabaseKey) {
+            return res.status(400).json({ error: 'table, supabaseUrl, and supabaseKey are required.' });
+          }
+          try {
+            const url = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/${table}?select=*`;
+            const response = await fetch(url, {
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`
+              }
+            });
+            
+            if (!response.ok) {
+              return res.json({ success: false, error: `HTTP error ${response.status} (${response.statusText})` });
+            }
+            
+            const rows = await response.json();
+            if (!Array.isArray(rows)) {
+              return res.json({ success: false, error: 'Response from Supabase is not an array. Please check the API key, URL, and table permissions.' });
+            }
+            
+            // Check if the table exists in MySQL and get its column list
+            let cols;
+            try {
+              cols = await query(`SHOW COLUMNS FROM \`${table}\``);
+            } catch (err: any) {
+              return res.json({ success: false, error: `MySQL table error: ${err.message || String(err)}` });
+            }
+            
+            const allowedCols = cols.map((c: any) => (c.Field || c.field || '').toString()).filter(Boolean);
+            
+            // Delete existing records to avoid duplicates
+            await query(`DELETE FROM \`${table}\``);
+            
+            let insertedCount = 0;
+            for (const row of rows) {
+              // Map keys of row to allowed columns
+              const filteredRow: any = {};
+              for (const col of allowedCols) {
+                if (col in row) {
+                  filteredRow[col] = row[col];
+                }
+              }
+              
+              const keys = Object.keys(filteredRow);
+              if (keys.length === 0) continue;
+              
+              const values = Object.values(filteredRow);
+              const sanitizedValues = values.map(val => {
+                if (typeof val === 'boolean') {
+                  return val ? 1 : 0;
+                }
+                if (val !== null && typeof val === 'object') {
+                  return JSON.stringify(val);
+                }
+                return val;
+              });
+              
+              const placeholders = keys.map(() => '?').join(',');
+              const sql = `INSERT INTO \`${table}\` (${keys.map(k => `\`${k}\``).join(',')}) VALUES (${placeholders})`;
+              await query(sql, sanitizedValues);
+              insertedCount++;
+            }
+            
+            return res.json({ success: true, count: insertedCount });
+          } catch (err: any) {
+            return res.json({ success: false, error: err.message || String(err) });
+          }
         }
 
         default: {
@@ -1304,6 +1388,37 @@ app.post('/api', async (req, res) => {
         
         saveJsonDb(db);
         return res.json({ success: true, report });
+      }
+
+      case 'importSingleTableFromSupabase': {
+        const { table, supabaseUrl, supabaseKey } = args;
+        if (!table || !supabaseUrl || !supabaseKey) {
+          return res.status(400).json({ error: 'table, supabaseUrl, and supabaseKey are required.' });
+        }
+        try {
+          const url = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/${table}?select=*`;
+          const response = await fetch(url, {
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`
+            }
+          });
+          
+          if (!response.ok) {
+            return res.json({ success: false, error: `HTTP error ${response.status} (${response.statusText})` });
+          }
+          
+          const rows = await response.json();
+          if (!Array.isArray(rows)) {
+            return res.json({ success: false, error: 'Response from Supabase is not an array.' });
+          }
+          
+          db[table] = rows;
+          saveJsonDb(db);
+          return res.json({ success: true, count: rows.length });
+        } catch (err: any) {
+          return res.json({ success: false, error: err.message || String(err) });
+        }
       }
 
       default: {
