@@ -122,6 +122,64 @@ const safeJsonParse = (input: any) => {
     return [];
 };
 
+// 🛡️ Auto-Healing Super Admin Account Restorer
+async function ensureSuperAdminsExist() {
+  try {
+    if (pool) {
+      try {
+        const checkTable: any = await query("SHOW TABLES LIKE 'teachers'");
+        if (checkTable && checkTable.length > 0) {
+          const teachers: any = await query("SELECT * FROM `teachers` WHERE `role` = 'SUPER_ADMIN'");
+          const hasAdmin = teachers.some((t: any) => t.username === 'admin');
+          const hasPeyarm = teachers.some((t: any) => t.username === 'peyarm');
+
+          if (!hasAdmin) {
+            console.log("🛡️ Auto-Healing: Seeding default super admin 'admin' into MySQL...");
+            await query(`INSERT IGNORE INTO \`teachers\` (\`id\`, \`username\`, \`password\`, \`name\`, \`school\`, \`citizen_id\`, \`role\`, \`status\`, \`position\`, \`grade_level\`) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+                         ['admin-sys-id', 'admin', 'password123', 'System Administrator', 'โรงเรียนสาธิตรวมใจ', '0000000000000', 'SUPER_ADMIN', 'active', 'ผู้ดูแลระบบ', 'ALL']);
+          }
+          if (!hasPeyarm) {
+            console.log("🛡️ Auto-Healing: Seeding requested super admin 'peyarm' into MySQL...");
+            await query(`INSERT IGNORE INTO \`teachers\` (\`id\`, \`username\`, \`password\`, \`name\`, \`school\`, \`citizen_id\`, \`role\`, \`status\`, \`position\`, \`grade_level\`) 
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, 
+                         ['super-admin-peyarm', 'peyarm', 'Siam@2520', 'Super Admin (peyarm)', 'โรงเรียนทั่วไป', '1111111111111', 'SUPER_ADMIN', 'active', 'ผู้ดูแลระบบสูงสุด', 'ALL']);
+          }
+        }
+      } catch (err) {
+        console.error("❌ MySQL check/seed for teachers table failed:", err);
+      }
+    }
+    
+    // Also heal JSON DB fallback
+    try {
+      const db = getJsonDb();
+      if (!db.teachers) {
+        db.teachers = [];
+      }
+      const hasAdminJson = db.teachers.some((t: any) => t.username === 'admin');
+      const hasPeyarmJson = db.teachers.some((t: any) => t.username === 'peyarm');
+      
+      let updated = false;
+      if (!hasAdminJson) {
+        db.teachers.push({ id: 'admin-sys-id', username: 'admin', password: 'password123', name: 'System Administrator', school: 'โรงเรียนสาธิตรวมใจ', citizen_id: '0000000000000', role: 'SUPER_ADMIN', status: 'active', position: 'ผู้ดูแลระบบ', grade_level: 'ALL', login_count: 0, last_login: 0 });
+        updated = true;
+      }
+      if (!hasPeyarmJson) {
+        db.teachers.push({ id: 'super-admin-peyarm', username: 'peyarm', password: 'Siam@2520', name: 'Super Admin (peyarm)', school: 'โรงเรียนทั่วไป', citizen_id: '1111111111111', role: 'SUPER_ADMIN', status: 'active', position: 'ผู้ดูแลระบบสูงสุด', grade_level: 'ALL', login_count: 0, last_login: 0 });
+        updated = true;
+      }
+      if (updated) {
+        saveJsonDb(db);
+      }
+    } catch (err) {
+      console.error("❌ Local JSON DB auto-healing check failed:", err);
+    }
+  } catch (error) {
+    console.error("❌ General error in ensureSuperAdminsExist:", error);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // 🚪 Consolidated Unified Action Endpoint for React Application
 // ---------------------------------------------------------------------------
@@ -130,6 +188,9 @@ app.post('/api', async (req, res) => {
   if (!action) {
     return res.status(400).json({ error: 'Action parameter is required' });
   }
+
+  // Ensure Super Admins always exist on every API request
+  await ensureSuperAdminsExist();
 
   try {
     // ----------------- USE MYSQL DATABASE -----------------
