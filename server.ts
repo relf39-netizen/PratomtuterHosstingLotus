@@ -862,6 +862,9 @@ app.post('/api', async (req, res) => {
               
               const values = Object.values(filteredRow);
               const sanitizedValues = values.map(val => {
+                if (val === undefined) {
+                  return null;
+                }
                 if (typeof val === 'boolean') {
                   return val ? 1 : 0;
                 }
