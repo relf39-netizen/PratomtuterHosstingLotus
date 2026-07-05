@@ -2,10 +2,10 @@
   "name": "pratom-smart-tutor",
   "private": true,
   "version": "1.1.0",
-  "type": "module",
+  "type": "commonjs",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "node build.js",
+    "build": "node build.mjs",
     "start": "node dist/server.js",
     "lint": "tsc --noEmit",
     "preview": "vite preview"

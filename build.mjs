@@ -19,10 +19,10 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('--- Starting Server Compilation ---');
+  console.log('--- Starting Server Compilation (CommonJS) ---');
   try {
-    // Compile server.ts using tsc with explicitly defined options to bypass esbuild's permission issues on IIS/Plesk
-    execSync('npx tsc server.ts --target ES2022 --module ESNext --moduleResolution node --outDir dist --noEmit false --esModuleInterop true --skipLibCheck true', { stdio: 'inherit' });
+    // Compile server.ts to CommonJS so that iisnode/IIS can require it without ERR_REQUIRE_ESM
+    execSync('npx tsc server.ts --target ES2022 --module CommonJS --moduleResolution node --outDir dist --noEmit false --esModuleInterop true --skipLibCheck true', { stdio: 'inherit' });
     console.log('✅ Server Compilation Completed successfully.');
   } catch (error) {
     console.error('❌ Server Compilation Failed:', error);
