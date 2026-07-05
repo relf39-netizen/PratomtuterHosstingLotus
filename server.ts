@@ -602,6 +602,85 @@ app.post('/api', async (req, res) => {
           return res.json({ students, results, teachers });
         }
 
+        case 'importFromSupabase': {
+          const { supabaseUrl, supabaseKey } = args;
+          if (!supabaseUrl || !supabaseKey) {
+            return res.status(400).json({ error: 'Supabase URL and Key are required.' });
+          }
+          
+          const tablesToImport = [
+            'app_settings',
+            'schools',
+            'classrooms',
+            'students',
+            'teachers',
+            'subjects',
+            'assignments',
+            'questions',
+            'exam_results',
+            'registration_requests',
+            'finance_accounts',
+            'finance_transactions',
+            'tpat_tgat_questions'
+          ];
+          
+          const report: any = {};
+          
+          for (const table of tablesToImport) {
+            try {
+              const url = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/${table}?select=*`;
+              const response = await fetch(url, {
+                headers: {
+                  'apikey': supabaseKey,
+                  'Authorization': `Bearer ${supabaseKey}`
+                }
+              });
+              
+              if (!response.ok) {
+                report[table] = { status: 'skipped', reason: `HTTP error ${response.status}` };
+                continue;
+              }
+              
+              const rows = await response.json();
+              if (!Array.isArray(rows)) {
+                report[table] = { status: 'skipped', reason: 'Response is not an array' };
+                continue;
+              }
+              
+              if (rows.length === 0) {
+                report[table] = { status: 'success', count: 0, note: 'No data found in old table' };
+                continue;
+              }
+              
+              // Insert into MySQL table
+              await query(`DELETE FROM \`${table}\``);
+              
+              for (const row of rows) {
+                const keys = Object.keys(row);
+                const values = Object.values(row);
+                const sanitizedValues = values.map(val => {
+                  if (typeof val === 'boolean') {
+                    return val ? 1 : 0;
+                  }
+                  if (val !== null && typeof val === 'object') {
+                    return JSON.stringify(val);
+                  }
+                  return val;
+                });
+                const placeholders = keys.map(() => '?').join(',');
+                const sql = `INSERT INTO \`${table}\` (${keys.map(k => `\`${k}\``).join(',')}) VALUES (${placeholders})`;
+                await query(sql, sanitizedValues);
+              }
+              
+              report[table] = { status: 'success', count: rows.length };
+            } catch (err: any) {
+              report[table] = { status: 'error', reason: err.message || String(err) };
+            }
+          }
+          
+          return res.json({ success: true, report });
+        }
+
         default: {
           return res.status(400).json({ error: `Unknown action: ${action}` });
         }
@@ -1163,6 +1242,68 @@ app.post('/api', async (req, res) => {
           results: db.exam_results,
           teachers: db.teachers
         });
+      }
+
+      case 'importFromSupabase': {
+        const { supabaseUrl, supabaseKey } = args;
+        if (!supabaseUrl || !supabaseKey) {
+          return res.status(400).json({ error: 'Supabase URL and Key are required.' });
+        }
+        
+        const tablesToImport = [
+          'app_settings',
+          'schools',
+          'classrooms',
+          'students',
+          'teachers',
+          'subjects',
+          'assignments',
+          'questions',
+          'exam_results',
+          'registration_requests',
+          'finance_accounts',
+          'finance_transactions',
+          'tpat_tgat_questions'
+        ];
+        
+        const report: any = {};
+        
+        for (const table of tablesToImport) {
+          try {
+            const url = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/${table}?select=*`;
+            const response = await fetch(url, {
+              headers: {
+                'apikey': supabaseKey,
+                'Authorization': `Bearer ${supabaseKey}`
+              }
+            });
+            
+            if (!response.ok) {
+              report[table] = { status: 'skipped', reason: `HTTP error ${response.status}` };
+              continue;
+            }
+            
+            const rows = await response.json();
+            if (!Array.isArray(rows)) {
+              report[table] = { status: 'skipped', reason: 'Response is not an array' };
+              continue;
+            }
+            
+            if (rows.length === 0) {
+              report[table] = { status: 'success', count: 0, note: 'No data found in old table' };
+              continue;
+            }
+            
+            // Store directly in JSON database
+            db[table] = rows;
+            report[table] = { status: 'success', count: rows.length };
+          } catch (err: any) {
+            report[table] = { status: 'error', reason: err.message || String(err) };
+          }
+        }
+        
+        saveJsonDb(db);
+        return res.json({ success: true, report });
       }
 
       default: {

@@ -7,7 +7,7 @@ import {
   Trash2, Users, Bell, X, TrendingUp, 
   ExternalLink, UserCog, Filter, Check, Eye, RefreshCw,
   Star, Zap, Target, Medal, ArrowUpRight, Trophy, ImageIcon, Upload, Save, Loader2, Settings, Info,
-  HelpCircle, Copy, Terminal, Sparkles, ShieldAlert
+  Sparkles, ShieldAlert
 } from 'lucide-react';
 import { 
   getSchools, manageSchool, getAllTeachers, getAllPendingRegistrations, 
@@ -40,6 +40,11 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [showSetupGuide, setShowSetupGuide] = useState(false);
+  const [migrationUrl, setMigrationUrl] = useState('');
+  const [migrationKey, setMigrationKey] = useState('');
+  const [migrationLoading, setMigrationLoading] = useState(false);
+  const [migrationReport, setMigrationReport] = useState<any>(null);
+  const [migrationError, setMigrationError] = useState('');
 
   // School Detail Modal
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
@@ -215,6 +220,41 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
       alert("บันทึกไม่สำเร็จ: " + res.message);
     }
     setIsSaving(false);
+  };
+
+  const handleMigration = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!migrationUrl || !migrationKey) {
+      alert("กรุณากรอกข้อมูล URL และ Key ให้ครบถ้วน");
+      return;
+    }
+    setMigrationLoading(true);
+    setMigrationError('');
+    setMigrationReport(null);
+    try {
+      const response = await fetch('/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'importFromSupabase',
+          supabaseUrl: migrationUrl,
+          supabaseKey: migrationKey
+        })
+      });
+      const res = await response.json();
+      if (res.success) {
+        setMigrationReport(res.report);
+        alert("ดึงข้อมูลจาก Supabase ย้ายมายังฐานข้อมูล MySQL สำเร็จเสร็จสิ้นแล้วครับ!");
+        // Refresh local stats
+        loadData();
+      } else {
+        setMigrationError(res.error || "เกิดข้อผิดพลาดในการดึงข้อมูล");
+      }
+    } catch (err: any) {
+      setMigrationError(err.message || String(err));
+    } finally {
+      setMigrationLoading(false);
+    }
   };
 
   const filteredSchools = useMemo(() => {
@@ -716,10 +756,10 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
                                     </p>
                                     <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 mb-4 px-6 py-4">
                                         <p className="text-[11px] font-black text-blue-800 uppercase tracking-widest mb-1 flex items-center gap-2">
-                                            <Shield size={14}/> การตั้งค่าใน Supabase
+                                            <Shield size={14}/> การจัดเก็บข้อมูลโลโก้และไฟล์แนบ
                                         </p>
                                         <p className="text-xs text-blue-700 font-medium leading-relaxed">
-                                            หากเกิดข้อผิดพลาดในการอัพโหลด: กรุณาไปที่ Supabase Console &gt; Storage &gt; สร้าง Bucket ชื่อ <span className="font-black">assets</span> และตั้งค่าเป็น <span className="font-black text-indigo-600">Public</span> ครับ
+                                            รูปภาพจะถูกจัดเก็บเข้าสู่โฟลเดอร์มีเดียหลักของระบบโดยอัตโนมัติ โดยเชื่อมโยงและบันทึกข้อมูลแบบเรียลไทม์ลงในฐานข้อมูลแบบ MySQL
                                         </p>
                                     </div>
                                     <input 
@@ -748,9 +788,9 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
                                     </div>
                                     <button 
                                       onClick={() => setShowSetupGuide(true)}
-                                      className="w-full py-3 bg-white border-2 border-dashed border-indigo-200 text-indigo-600 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-50 transition"
+                                      className="w-full py-3 bg-white border-2 border-dashed border-indigo-200 text-indigo-600 rounded-2xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-indigo-50 transition shadow"
                                     >
-                                      <HelpCircle size={16}/> วิธีตั้งค่า Supabase Storage
+                                      <RefreshCw size={16}/> ระบบดึงข้อมูลจาก Supabase เดิมเข้า MySQL
                                     </button>
                                     <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100">
                                         <p className="text-[10px] font-black text-amber-700 uppercase tracking-widest mb-1 flex items-center gap-1">
@@ -801,7 +841,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
                                     </div>
                                     
                                     <p className="text-xs text-slate-300 leading-relaxed font-medium">
-                                        ระบบ Pratom Smart Tutor ได้รับการติดตั้ง **Auto-Healing Query Engine** ซึ่งจะช่วยดูแลโครงสร้างข้อมูลใน Supabase ให้สามารถทำงานได้อย่างไร้รอยต่อ แม้ว่าตารางจะยังไม่สมบูรณ์ (เช่น คอลัมน์ <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-white text-[11px]">avatar</code> ในตารางครู, คอลัมน์ <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-white text-[11px]">username / password</code> ในตารางนักเรียน หรือ <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-white text-[11px]">unit</code> ในตารางข้อสอบ) ระบบจะคัดกรองข้อมูลและบันทึกส่วนที่เหลือให้โดยไม่เกิดหน้าจอล้มเหลว
+                                        ระบบ Pratom Smart Tutor ได้รับการติดตั้ง **Auto-Healing MySQL Query Engine** ซึ่งจะช่วยดูแลโครงสร้างข้อมูลในฐานข้อมูล MySQL ให้สามารถทำงานได้อย่างไร้รอยต่อ แม้ว่าตารางจะยังไม่สมบูรณ์ (เช่น คอลัมน์ <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-white text-[11px]">avatar</code> ในตารางครู, คอลัมน์ <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-white text-[11px]">username / password</code> ในตารางนักเรียน หรือ <code className="bg-white/10 px-1.5 py-0.5 rounded font-mono text-white text-[11px]">unit</code> ในตารางข้อสอบ) ระบบจะคัดกรองข้อมูลและบันทึกส่วนที่เหลือให้โดยไม่เกิดหน้าจอล้มเหลว
                                     </p>
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
@@ -831,7 +871,7 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
                                     <div className="bg-white/5 border border-white/10 p-4 rounded-2xl text-slate-300 text-xs flex flex-col gap-2">
                                         <p className="font-black text-indigo-300 text-[11px] uppercase tracking-wider">💡 แนะนำเกี่ยวกับการย้ายข้อมูล (Migration):</p>
                                         <p className="leading-relaxed text-[11px] opacity-90">
-                                            หากต้องการอัปเกรดฐานข้อมูลให้ครบสมบูรณ์ทุกฟีเจอร์ (เช่น บันทึกรหัสผ่านเด็กนักเรียนรายบุคคล) คุณสามารถกดปุ่ม **วิธีตั้งค่า Supabase Storage** เพื่อนำคำสั่ง SQL ที่ทีมงานเตรียมไว้ไปวางและรันในหน้า SQL Editor ของ Supabase เพียงครั้งเดียว ได้อย่างง่ายดายครับ!
+                                            หากคุณต้องการดึงข้อมูลเดิมจากโครงการ Supabase ตัวเก่าเข้ามาใช้งานในระบบฐานข้อมูลแบบ MySQL นี้ คุณสามารถคลิกปุ่ม **ระบบดึงข้อมูลจาก Supabase เดิมเข้า MySQL** ด้านบนเพื่อย้ายข้อมูลทั้งหมดโดยอัตโนมัติได้อย่างสมบูรณ์แบบครับ!
                                         </p>
                                     </div>
                                 </div>
@@ -847,132 +887,119 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
             <div className="bg-white rounded-[40px] shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
               <div className="p-8 bg-indigo-600 text-white flex justify-between items-center">
                 <div className="flex items-center gap-4">
-                  <div className="bg-white/20 p-3 rounded-2xl"><Terminal size={24}/></div>
-                  <h3 className="text-2xl font-black">วิธีการตั้งค่า Supabase Storage</h3>
+                  <div className="bg-white/20 p-3 rounded-2xl"><RefreshCw size={24} className={migrationLoading ? "animate-spin" : ""}/></div>
+                  <h3 className="text-2xl font-black text-white">ระบบดึงและย้ายข้อมูลจาก Supabase เดิม</h3>
                 </div>
-                <button onClick={() => setShowSetupGuide(false)} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition"><X size={24}/></button>
+                <button onClick={() => { if (!migrationLoading) { setShowSetupGuide(false); setMigrationReport(null); setMigrationError(''); } }} className="p-2 bg-white/10 hover:bg-white/20 rounded-full transition text-white">
+                  <X size={24}/>
+                </button>
               </div>
-              <div className="p-8 overflow-auto space-y-8">
-                <section>
-                  <h4 className="font-black text-slate-800 text-lg mb-4 flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm">1</span>
-                    สร้าง Bucket ชื่อ "assets"
-                  </h4>
-                  <ul className="space-y-3 ml-10 text-slate-600 text-sm font-medium list-disc">
-                    <li>เข้าสู่ <a href="https://supabase.com/dashboard" target="_blank" rel="noreferrer" className="text-indigo-600 underline">Supabase Console</a> เลือกโปรเจกต์ของคุณ</li>
-                    <li>ไปที่เมนู <span className="font-black text-slate-900">Storage</span> (รูปถังเก็บของที่แถบซ้าย)</li>
-                    <li>กดปุ่ม <span className="font-black text-indigo-600">New Bucket</span></li>
-                    <li>ใส่ชื่อว่า <code className="bg-slate-100 px-2 py-1 rounded font-black text-indigo-600">assets</code></li>
-                    <li>เลือกเปิด <span className="font-black text-emerald-600">Public Bucket</span> (สำคัญมากเพื่อให้คนอื่นเห็นโลโก้)</li>
-                    <li>กดปุ่ม <span className="font-black">Save</span></li>
-                  </ul>
-                </section>
+              <div className="p-8 overflow-auto space-y-6">
+                <div className="bg-indigo-50 border border-indigo-100 p-6 rounded-3xl text-left">
+                  <h4 className="font-black text-indigo-900 text-base mb-1">คำอธิบายระบบ</h4>
+                  <p className="text-xs text-indigo-700 font-medium leading-relaxed">
+                    เครื่องมือนี้จะทำการดึงข้อมูลโครงสร้างหลักทั้งหมดจาก Supabase Database เดิม (ผ่าน REST API) นำมาเขียนลงในฐานข้อมูลแบบ MySQL ปัจจุบันของท่านโดยตรงอย่างปลอดภัย ระบบจะทำการล้างข้อมูลตารางเดิมเฉพาะตารางที่มีการนำเข้าสำเร็จเพื่อไม่ให้เกิดข้อมูลซ้ำซ้อน
+                  </p>
+                </div>
 
-                <section>
-                  <h4 className="font-black text-slate-800 text-lg mb-4 flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm">2</span>
-                    อัปเดตตารางฐานข้อมูลทั้งหมด (Full Database Migration)
-                  </h4>
-                  <p className="ml-10 text-slate-500 text-sm mb-4">เพื่อให้ระบบและฐานข้อมูลรองรับทุกฟีเจอร์อย่างสมบูรณ์ (เช่น รหัสผ่านนักเรียน, รูปโปรไฟล์ครู, และการสร้างข้อสอบสะสม) ให้คัดลอกคำสั่ง SQL ทั้งหมดนี้ไปวางและรันในหน้า SQL Editor ของ Supabase ครับ:</p>
-                  <div className="ml-10 bg-slate-900 p-6 rounded-2xl relative group mb-6">
-                    <pre className="text-emerald-300 text-xs overflow-x-auto leading-relaxed">
-{`ALTER TABLE students ADD COLUMN IF NOT EXISTS username TEXT;
-ALTER TABLE students ADD COLUMN IF NOT EXISTS password TEXT;
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS avatar TEXT;
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS position TEXT;
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS teaching_classes TEXT;
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS teaching_classroom_ids TEXT;
-ALTER TABLE teachers ADD COLUMN IF NOT EXISTS grade_level TEXT;
-ALTER TABLE questions ADD COLUMN IF NOT EXISTS unit TEXT;
-ALTER TABLE questions ADD COLUMN IF NOT EXISTS assignment_id TEXT;
-ALTER TABLE exam_results ADD COLUMN IF NOT EXISTS details JSONB;`}
-                    </pre>
-                    <button 
-                      onClick={() => {
-                        navigator.clipboard.writeText(`ALTER TABLE students ADD COLUMN IF NOT EXISTS username TEXT;\nALTER TABLE students ADD COLUMN IF NOT EXISTS password TEXT;\nALTER TABLE teachers ADD COLUMN IF NOT EXISTS avatar TEXT;\nALTER TABLE teachers ADD COLUMN IF NOT EXISTS position TEXT;\nALTER TABLE teachers ADD COLUMN IF NOT EXISTS teaching_classes TEXT;\nALTER TABLE teachers ADD COLUMN IF NOT EXISTS teaching_classroom_ids TEXT;\nALTER TABLE teachers ADD COLUMN IF NOT EXISTS grade_level TEXT;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS unit TEXT;\nALTER TABLE questions ADD COLUMN IF NOT EXISTS assignment_id TEXT;\nALTER TABLE exam_results ADD COLUMN IF NOT EXISTS details JSONB;`);
-                        alert("คัดลอกคำสั่ง SQL แล้ว!");
-                      }}
-                      className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition"
-                    >
-                      <Copy size={16}/>
-                    </button>
+                <form onSubmit={handleMigration} className="space-y-4 text-left">
+                  <div>
+                    <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">1. Supabase Project URL</label>
+                    <input 
+                      type="text" 
+                      required
+                      value={migrationUrl}
+                      onChange={(e) => setMigrationUrl(e.target.value)}
+                      placeholder="เช่น https://xxxxxx.supabase.co" 
+                      disabled={migrationLoading}
+                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-400 font-mono text-sm"
+                    />
                   </div>
 
-                  <h4 className="font-black text-slate-800 text-lg mb-4 flex items-center gap-2">
-                    <span className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-sm">3</span>
-                    สร้าง Table "app_settings"
-                  </h4>
-                  <p className="ml-10 text-slate-500 text-sm mb-4">หากยังไม่มีตารางเก็บค่าโลโก้ ให้ไปที่ <span className="font-black">SQL Editor</span> แล้วรันโค้ดนี้:</p>
-                  <div className="ml-10 bg-slate-900 p-6 rounded-2xl relative group mb-8">
-                    <pre className="text-indigo-300 text-xs overflow-x-auto leading-relaxed">
-{`CREATE TABLE IF NOT EXISTS app_settings (
-  id BIGINT PRIMARY KEY DEFAULT 1,
-  logo_url TEXT,
-  app_name TEXT DEFAULT 'Pratom Smart Tutor'
-);
-
-INSERT INTO app_settings (id, logo_url, app_name)
-VALUES (1, 'https://raw.githubusercontent.com/relf39/pratom-smart-tutor/main/public/mst-logo.png', 'Pratom Smart Tutor')
-ON CONFLICT (id) DO NOTHING;`}
-                    </pre>
-                    <button 
-                      onClick={() => {
-                        navigator.clipboard.writeText(`CREATE TABLE IF NOT EXISTS app_settings (\n  id BIGINT PRIMARY KEY DEFAULT 1,\n  logo_url TEXT,\n  app_name TEXT DEFAULT 'Pratom Smart Tutor'\n);\n\nINSERT INTO app_settings (id, logo_url, app_name)\nVALUES (1, 'https://raw.githubusercontent.com/relf39/pratom-smart-tutor/main/public/mst-logo.png', 'Pratom Smart Tutor')\nON CONFLICT (id) DO NOTHING;`);
-                        alert("คัดลอกคำสั่ง SQL แล้ว!");
-                      }}
-                      className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition"
-                    >
-                      <Copy size={16}/>
-                    </button>
+                  <div>
+                    <label className="block text-xs font-black text-slate-500 uppercase tracking-widest mb-2">2. Supabase Anon Key (หรือ Service Role Key)</label>
+                    <input 
+                      type="password" 
+                      required
+                      value={migrationKey}
+                      onChange={(e) => setMigrationKey(e.target.value)}
+                      placeholder="กรอก Anon Key ของ Supabase..." 
+                      disabled={migrationLoading}
+                      className="w-full px-5 py-4 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-indigo-400 font-mono text-sm"
+                    />
                   </div>
 
-                  <h4 className="font-black text-slate-800 text-lg mb-4 flex items-center gap-2 text-rose-600">
-                    <span className="w-8 h-8 rounded-full bg-rose-50 flex items-center justify-center text-sm">4</span>
-                    อัปเดตระบบ "สอบกลางภาค/ปลายภาค"
-                  </h4>
-                  <p className="ml-10 text-slate-500 text-sm mb-4">เพื่อให้ระบบรองรับการสร้างข้อสอบกลางภาคและปลายภาค ต้องอัปเดตเงื่อนไขในฐานข้อมูลดังนี้:</p>
-                  <div className="ml-10 bg-slate-900 p-6 rounded-2xl relative group mb-6">
-                    <pre className="text-rose-300 text-xs overflow-x-auto leading-relaxed">
-{`-- อัปเดตคอลัมน์ category ในตาราง assignments
-ALTER TABLE assignments DROP CONSTRAINT IF EXISTS assignments_category_check;
-ALTER TABLE assignments ADD CONSTRAINT assignments_category_check 
-CHECK (category IN ('GENERAL', 'ONET', 'NT', 'EXAM', 'TGAT', 'TPAT', 'MIDTERM', 'FINAL'));
+                  {migrationError && (
+                    <div className="bg-red-50 border border-red-100 p-4 rounded-2xl text-red-600 text-xs font-bold leading-relaxed flex items-start gap-2">
+                      <span className="text-red-500 font-black">⚠️</span>
+                      <span>{migrationError}</span>
+                    </div>
+                  )}
 
--- อัปเดตตาราง exam_results ด้วย (ถ้ามี)
-ALTER TABLE exam_results DROP CONSTRAINT IF EXISTS exam_results_category_check;
-ALTER TABLE exam_results ADD CONSTRAINT exam_results_category_check 
-CHECK (category IN ('GENERAL', 'ONET', 'NT', 'EXAM', 'TGAT', 'TPAT', 'MIDTERM', 'FINAL'));`}
-                    </pre>
-                    <button 
-                      onClick={() => {
-                        navigator.clipboard.writeText(`ALTER TABLE assignments DROP CONSTRAINT IF EXISTS assignments_category_check;\nALTER TABLE assignments ADD CONSTRAINT assignments_category_check \nCHECK (category IN ('GENERAL', 'ONET', 'NT', 'EXAM', 'TGAT', 'TPAT', 'MIDTERM', 'FINAL'));\n\nALTER TABLE exam_results DROP CONSTRAINT IF EXISTS exam_results_category_check;\nALTER TABLE exam_results ADD CONSTRAINT exam_results_category_check \nCHECK (category IN ('GENERAL', 'ONET', 'NT', 'EXAM', 'TGAT', 'TPAT', 'MIDTERM', 'FINAL'));`);
-                        alert("คัดลอกคำสั่ง SQL แล้ว!");
-                      }}
-                      className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition"
-                    >
-                      <Copy size={16}/>
-                    </button>
-                  </div>
-                </section>
+                  <button
+                    type="submit"
+                    disabled={migrationLoading}
+                    className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-black text-lg shadow-lg hover:bg-indigo-700 active:scale-95 transition disabled:opacity-50 flex items-center justify-center gap-3"
+                  >
+                    {migrationLoading ? (
+                      <>
+                        <Loader2 className="animate-spin" size={24}/>
+                        <span>กำลังเชื่อมต่อและดึงตารางข้อมูลทั้งหมด...</span>
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw size={20}/>
+                        <span>เริ่มดึงข้อมูลทั้งหมดเข้า MySQL</span>
+                      </>
+                    )}
+                  </button>
+                </form>
 
-                <section>
-                  <div className="bg-amber-50 p-6 rounded-3xl border border-amber-100 flex gap-4">
-                    <div className="bg-amber-500 text-white p-3 rounded-2xl h-fit"><Info size={24}/></div>
-                    <div>
-                      <h4 className="font-black text-amber-800 text-sm uppercase tracking-widest mb-1">หมายเหตุเรื่องความปลอดภัย</h4>
-                      <p className="text-xs text-amber-700 font-medium leading-relaxed">
-                        ในโหมด Production คุณควรตั้งค่า <span className="font-black">Policies</span> ใน Storage เพื่อให้เฉพาะ Admin เท่านั้นที่อัพโหลดรูปได้ โดยไปที่ <span className="font-black">Storage &gt; Policies &gt; assets</span> เลือก <span className="font-black">New Policy</span> สำหรับอัพโหลดครับ
-                      </p>
+                {migrationReport && (
+                  <div className="border-t border-slate-100 pt-6 text-left">
+                    <h4 className="font-black text-slate-800 text-lg mb-4 flex items-center gap-2">
+                      <CheckCircle className="text-emerald-500" size={20}/> ผลการดึงข้อมูลรายตาราง
+                    </h4>
+                    <div className="bg-slate-50 border border-slate-100 rounded-3xl overflow-hidden shadow-inner max-h-60 overflow-y-auto">
+                      <table className="w-full text-xs text-slate-600">
+                        <thead className="bg-slate-100 font-black text-[10px] uppercase tracking-wider text-slate-500 border-b">
+                          <tr>
+                            <th className="p-3 text-left">ชื่อตาราง (Table)</th>
+                            <th className="p-3 text-center">สถานะ (Status)</th>
+                            <th className="p-3 text-right">จำนวนที่บันทึก (Rows)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200/60">
+                          {Object.entries(migrationReport).map(([table, detail]: [string, any]) => (
+                            <tr key={table} className="hover:bg-slate-100/50">
+                              <td className="p-3 font-mono font-bold text-slate-800">{table}</td>
+                              <td className="p-3 text-center">
+                                {detail.status === 'success' ? (
+                                  <span className="bg-emerald-50 text-emerald-600 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-emerald-100">สำเร็จ 🟢</span>
+                                ) : detail.status === 'skipped' ? (
+                                  <span className="bg-amber-50 text-amber-600 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-amber-100" title={detail.reason}>ข้าม 🟡</span>
+                                ) : (
+                                  <span className="bg-red-50 text-red-600 px-2.5 py-1 rounded-full font-bold text-[10px] uppercase tracking-wide border border-red-100" title={detail.reason}>ล้มเหลว 🔴</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-right font-black font-mono text-slate-700">
+                                {detail.count !== undefined ? detail.count.toLocaleString() : '-'}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
-                </section>
+                )}
               </div>
               <div className="p-8 bg-slate-50 border-t border-slate-100 flex justify-end">
                 <button 
-                  onClick={() => setShowSetupGuide(false)}
-                  className="px-10 py-4 bg-indigo-600 text-white rounded-2xl font-black hover:bg-slate-800 transition"
+                  onClick={() => { if (!migrationLoading) { setShowSetupGuide(false); setMigrationReport(null); setMigrationError(''); } }}
+                  disabled={migrationLoading}
+                  className="px-10 py-4 bg-slate-800 hover:bg-slate-900 text-white rounded-2xl font-black transition disabled:opacity-50"
                 >
-                  เข้าใจแล้ว
+                  ปิดหน้าต่าง
                 </button>
               </div>
             </div>

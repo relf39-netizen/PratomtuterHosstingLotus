@@ -164,7 +164,7 @@ const ProfileManager: React.FC<ProfileManagerProps> = ({ teacher, onUpdate }) =>
         if (url) {
             setAvatar(url);
         } else {
-            alert("⚠️ อัปโหลดไม่สำเร็จ กรุณาตรวจสอบการตั้งค่า Supabase Storage Bucket 'assets'");
+            alert("⚠️ อัปโหลดไม่สำเร็จ กรุณาตรวจสอบไฟล์อัปโหลดหรือการตั้งค่าโฟลเดอร์เก็บข้อมูล");
         }
     } catch (err) {
         console.error(err);
