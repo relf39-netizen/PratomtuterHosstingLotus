@@ -122,6 +122,47 @@ const safeJsonParse = (input: any) => {
     return [];
 };
 
+// 🔄 Helper to fetch ALL rows from Supabase table handling pagination (> 1000 rows)
+async function fetchSupabaseTableAllRows(supabaseUrl: string, supabaseKey: string, table: string) {
+  let allRows: any[] = [];
+  let offset = 0;
+  const limit = 1000;
+  let hasMore = true;
+
+  while (hasMore) {
+    const url = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/${table}?select=*&limit=${limit}&offset=${offset}`;
+    const response = await fetch(url, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`
+      }
+    });
+
+    if (!response.ok) {
+      const is404 = response.status === 404;
+      return { 
+        success: false, 
+        is404, 
+        error: is404 ? 'ไม่พบบน Supabase (ข้ามการดึงข้อมูล)' : `HTTP error ${response.status} (${response.statusText})` 
+      };
+    }
+
+    const rows = await response.json();
+    if (!Array.isArray(rows)) {
+      return { success: false, error: 'Response from Supabase is not an array. Please check API credentials and permissions.' };
+    }
+
+    allRows = allRows.concat(rows);
+    if (rows.length < limit) {
+      hasMore = false;
+    } else {
+      offset += limit;
+    }
+  }
+
+  return { success: true, rows: allRows };
+}
+
 // 🛡️ Auto-Healing Super Admin Account Restorer
 async function ensureSuperAdminsExist() {
   try {
@@ -760,27 +801,16 @@ app.post('/api', async (req, res) => {
             return res.status(400).json({ error: 'table, supabaseUrl, and supabaseKey are required.' });
           }
           try {
-            const url = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/${table}?select=*`;
-            const response = await fetch(url, {
-              headers: {
-                'apikey': supabaseKey,
-                'Authorization': `Bearer ${supabaseKey}`
-              }
-            });
-            
-            if (!response.ok) {
-              const is404 = response.status === 404;
+            const fetchResult = await fetchSupabaseTableAllRows(supabaseUrl, supabaseKey, table);
+            if (!fetchResult.success) {
               return res.json({ 
                 success: false, 
-                is404, 
-                error: is404 ? 'ไม่พบบน Supabase (ข้ามการดึงข้อมูล)' : `HTTP error ${response.status} (${response.statusText})` 
+                is404: fetchResult.is404, 
+                error: fetchResult.error 
               });
             }
             
-            const rows = await response.json();
-            if (!Array.isArray(rows)) {
-              return res.json({ success: false, error: 'Response from Supabase is not an array. Please check the API key, URL, and table permissions.' });
-            }
+            const rows = fetchResult.rows || [];
             
             // Check if the table exists in MySQL and get its detailed column list
             let cols;
@@ -1517,27 +1547,16 @@ app.post('/api', async (req, res) => {
           return res.status(400).json({ error: 'table, supabaseUrl, and supabaseKey are required.' });
         }
         try {
-          const url = `${supabaseUrl.replace(/\/$/, '')}/rest/v1/${table}?select=*`;
-          const response = await fetch(url, {
-            headers: {
-              'apikey': supabaseKey,
-              'Authorization': `Bearer ${supabaseKey}`
-            }
-          });
-          
-          if (!response.ok) {
-            const is404 = response.status === 404;
+          const fetchResult = await fetchSupabaseTableAllRows(supabaseUrl, supabaseKey, table);
+          if (!fetchResult.success) {
             return res.json({ 
               success: false, 
-              is404, 
-              error: is404 ? 'ไม่พบบน Supabase (ข้ามการดึงข้อมูล)' : `HTTP error ${response.status} (${response.statusText})` 
+              is404: fetchResult.is404, 
+              error: fetchResult.error 
             });
           }
           
-          const rows = await response.json();
-          if (!Array.isArray(rows)) {
-            return res.json({ success: false, error: 'Response from Supabase is not an array.' });
-          }
+          const rows = fetchResult.rows || [];
           
           db[table] = rows;
           saveJsonDb(db);
