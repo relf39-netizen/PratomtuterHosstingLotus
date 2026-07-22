@@ -168,70 +168,70 @@ const SubjectManager: React.FC<SubjectManagerProps> = ({ subjects, teacher, canM
 
   return (
     <div className="max-w-6xl mx-auto animate-fade-in font-prompt px-2 pb-10">
-        <div className="flex justify-between items-center mb-8 bg-white p-5 rounded-[30px] shadow-sm border border-slate-100">
+        <div className="flex justify-between items-center mb-6 bg-white p-4 sm:p-5 rounded-2xl shadow-sm border border-slate-100">
             <div>
-                <h3 className="text-xl font-black text-slate-800 flex items-center gap-3">
-                    <div className="bg-indigo-600 p-2.5 rounded-2xl text-white shadow-lg">
-                        <List size={24}/>
+                <h3 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2.5">
+                    <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-md">
+                        <List size={20}/>
                     </div>
                     จัดการรายวิชาที่คุณสอน
                 </h3>
             </div>
-            <button onClick={() => { fetchRooms(); onRefresh(); }} className="p-3 bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-2xl transition-all active:rotate-180 shadow-sm border border-slate-100">
-                <RefreshCw size={22}/>
+            <button onClick={() => { fetchRooms(); onRefresh(); }} className="p-2.5 bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all active:rotate-180 shadow-sm border border-slate-100">
+                <RefreshCw size={18}/>
             </button>
         </div>
         
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-4">
-                <div className="bg-white p-8 rounded-[40px] border border-slate-200 shadow-sm relative overflow-hidden sticky top-24">
-                    <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
-                    <h4 className="font-black text-slate-800 mb-8 flex items-center gap-2">
-                        <PlusCircle className="text-indigo-600" size={24}/> ข้อมูลวิชาใหม่
+                <div className="bg-white p-5 sm:p-6 rounded-3xl border border-slate-200 shadow-sm relative overflow-hidden sticky top-20">
+                    <div className="absolute top-0 left-0 w-full h-1.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"></div>
+                    <h4 className="font-black text-slate-800 text-sm sm:text-base mb-5 flex items-center gap-2">
+                        <PlusCircle className="text-indigo-600" size={20}/> ข้อมูลวิชาใหม่
                     </h4>
                     
                     {availableGrades.length === 0 ? (
-                        <div className="bg-amber-50 p-6 rounded-3xl text-sm text-amber-700 font-bold border border-amber-100 leading-relaxed shadow-inner">
-                            <AlertCircle className="inline mr-2" size={20}/> 
+                        <div className="bg-amber-50 p-5 rounded-2xl text-xs text-amber-700 font-bold border border-amber-100 leading-relaxed shadow-inner">
+                            <AlertCircle className="inline mr-1.5" size={18}/> 
                             โรงเรียนนี้ยังไม่ได้ตั้งค่าห้องเรียน กรุณาไปที่เมนู "ตั้งค่าโรงเรียน" เพื่อเพิ่มห้องเรียนก่อนสร้างวิชาครับ
                         </div>
                     ) : (
-                        <div className="space-y-6">
+                        <div className="space-y-4">
                             <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">ชื่อวิชาเรียน</label>
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1">ชื่อวิชาเรียน</label>
                                 <input 
                                     type="text" 
                                     value={newSubjectName} 
                                     onChange={e => setNewSubjectName(e.target.value)} 
-                                    className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none transition font-black text-slate-700 shadow-inner" 
+                                    className="w-full p-3 border-2 border-slate-100 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-400 outline-none transition font-bold text-xs sm:text-sm text-slate-700 shadow-inner" 
                                     placeholder="เช่น คณิตศาสตร์ ป.6 (เพิ่มเติม)" 
                                 />
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3">
                                 <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">ระดับชั้น</label>
-                                    <select value={selectedGrade} onChange={e => setSelectedGrade(e.target.value)} className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-white text-sm font-black text-slate-700 outline-none focus:border-indigo-400 shadow-sm">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1">ระดับชั้น</label>
+                                    <select value={selectedGrade} onChange={e => setSelectedGrade(e.target.value)} className="w-full p-3 border-2 border-slate-100 rounded-xl bg-white text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm">
                                         {availableGrades.map(g => <option key={g} value={g}>{GRADE_LABELS[g] || g}</option>)}
                                     </select>
                                 </div>
                                 <div>
-                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">โทนสี</label>
-                                    <select value={newSubjectColor} onChange={e => setNewSubjectColor(e.target.value)} className="w-full p-4 border-2 border-slate-100 rounded-2xl bg-white text-sm font-black text-slate-700 outline-none focus:border-indigo-400 shadow-sm">
+                                    <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1 ml-1">โทนสี</label>
+                                    <select value={newSubjectColor} onChange={e => setNewSubjectColor(e.target.value)} className="w-full p-3 border-2 border-slate-100 rounded-xl bg-white text-xs sm:text-sm font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm">
                                         {CARD_COLORS.map(c => <option key={c.name} value={c.class}>{c.name}</option>)}
                                     </select>
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3.5 ml-1">สัญลักษณ์ (Icon)</label>
-                                <div className="grid grid-cols-5 gap-2.5 bg-slate-50 p-4 rounded-3xl border border-slate-100 shadow-inner">
+                                <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">สัญลักษณ์ (ICON)</label>
+                                <div className="grid grid-cols-5 gap-2 bg-slate-50 p-3 rounded-2xl border border-slate-100 shadow-inner">
                                     {SUBJECT_ICONS.map(i => (
                                         <button 
                                             key={i.name} 
                                             type="button"
                                             onClick={() => setNewSubjectIcon(i.name)} 
-                                            className={`p-3 rounded-2xl border-2 transition-all flex items-center justify-center ${newSubjectIcon === i.name ? 'border-indigo-500 bg-white text-indigo-600 scale-110 shadow-lg ring-4 ring-indigo-50' : 'border-transparent text-slate-300 hover:bg-white'}`}
+                                            className={`p-2 rounded-xl border-2 transition-all flex items-center justify-center ${newSubjectIcon === i.name ? 'border-indigo-500 bg-white text-indigo-600 scale-105 shadow-md ring-2 ring-indigo-50' : 'border-transparent text-slate-300 hover:bg-white'}`}
                                         >
                                             {i.component}
                                         </button>
@@ -239,15 +239,15 @@ const SubjectManager: React.FC<SubjectManagerProps> = ({ subjects, teacher, canM
                                 </div>
                             </div>
 
-                            <div className="bg-slate-50 p-6 rounded-[30px] border border-slate-100 shadow-inner">
-                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-4">มอบหมายให้ห้องเรียน:</label>
-                                <div className="flex flex-wrap gap-2 max-h-[150px] overflow-y-auto pr-2 custom-scrollbar">
+                            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 shadow-inner">
+                                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2.5">มอบหมายให้ห้องเรียน:</label>
+                                <div className="flex flex-wrap gap-1.5 max-h-[140px] overflow-y-auto pr-1 custom-scrollbar">
                                     {allClassrooms.filter(c => c.gradeLevel === selectedGrade).map(room => (
                                         <button 
                                             key={room.id} 
                                             type="button"
                                             onClick={() => toggleRoom(room.roomNumber)} 
-                                            className={`px-4 py-2.5 rounded-xl text-xs font-black transition-all border-2 ${targetRooms.includes(room.roomNumber) ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-slate-200 text-slate-400 hover:border-indigo-300'}`}
+                                            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all border-2 ${targetRooms.includes(room.roomNumber) ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-slate-200 text-slate-500 hover:border-indigo-300'}`}
                                         >
                                             ห้อง {room.roomNumber}
                                         </button>
@@ -258,9 +258,9 @@ const SubjectManager: React.FC<SubjectManagerProps> = ({ subjects, teacher, canM
                             <button 
                                 onClick={handleAddSubject} 
                                 disabled={isProcessing} 
-                                className="w-full bg-indigo-600 text-white py-5 rounded-[25px] font-black text-xl shadow-xl hover:bg-indigo-700 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3 border-b-8 border-indigo-900 mt-4"
+                                className="w-full bg-indigo-600 text-white py-3 rounded-2xl font-black text-sm shadow-lg hover:bg-indigo-700 transition active:scale-95 disabled:opacity-50 flex items-center justify-center gap-2 border-b-4 border-indigo-900 mt-2"
                             >
-                                {isProcessing ? <RefreshCw className="animate-spin" size={26}/> : <PlusCircle size={26}/>}
+                                {isProcessing ? <RefreshCw className="animate-spin" size={18}/> : <PlusCircle size={18}/>}
                                 ยืนยันสร้างรายวิชา
                             </button>
                         </div>
@@ -269,25 +269,25 @@ const SubjectManager: React.FC<SubjectManagerProps> = ({ subjects, teacher, canM
             </div>
 
             <div className="lg:col-span-8">
-                <div className="bg-white p-10 rounded-[50px] border border-slate-200 shadow-sm min-h-[700px] flex flex-col">
-                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-10 border-b border-slate-50 pb-8">
+                <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm min-h-[600px] flex flex-col">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 border-b border-slate-100 pb-5">
                         <div>
-                            <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
-                                <BookOpen className="text-emerald-500" size={28}/> 
+                            <h4 className="font-black text-base sm:text-lg text-slate-800 flex items-center gap-2">
+                                <BookOpen className="text-emerald-500" size={22}/> 
                                 {isDirector ? `รายวิชาทั้งหมดในโรงเรียน (${mySubjects.length})` : `รายวิชาในความดูแล (${mySubjects.length})`}
                             </h4>
                             {isDirector && (
-                                <p className="text-xs text-indigo-600 font-bold mt-1">ในฐานะผู้อำนวยการโรงเรียน คุณสามารถติดตามดูรายวิชาของครูทุกคนได้</p>
+                                <p className="text-[11px] text-indigo-600 font-bold mt-0.5">ในฐานะผู้อำนวยการโรงเรียน คุณสามารถติดตามดูรายวิชาของครูทุกคนได้</p>
                             )}
                         </div>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
                             {isDirector && (
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-black text-slate-500 shrink-0">เลือกระดับชั้น:</span>
+                                <div className="flex items-center gap-1.5">
+                                    <span className="text-[11px] font-bold text-slate-500 shrink-0">เลือกระดับชั้น:</span>
                                     <select 
                                         value={filterGrade} 
                                         onChange={e => setFilterGrade(e.target.value)} 
-                                        className="p-2.5 bg-slate-50 border-2 border-slate-100 rounded-xl text-xs font-black text-slate-700 outline-none focus:border-indigo-400 shadow-sm shrink-0"
+                                        className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 outline-none focus:border-indigo-400 shadow-sm shrink-0"
                                     >
                                         <option value="ALL">ทั้งหมดทุกชั้น</option>
                                         <option value="P1">ป.1</option>
@@ -302,7 +302,7 @@ const SubjectManager: React.FC<SubjectManagerProps> = ({ subjects, teacher, canM
                                     </select>
                                 </div>
                             )}
-                            <div className="bg-slate-100 px-5 py-2.5 rounded-full text-[10px] font-black text-slate-400 uppercase tracking-widest border border-slate-200 shrink-0">School Subjects</div>
+                            <div className="bg-slate-100 px-3 py-1 rounded-full text-[9px] font-black text-slate-400 uppercase tracking-wider border border-slate-200 shrink-0">School Subjects</div>
                         </div>
                     </div>
 

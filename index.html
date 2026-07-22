@@ -36,8 +36,17 @@
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600&display=swap" rel="stylesheet">
     
     <style>
-      body { font-family: 'Sarabun', sans-serif; background-color: #f8fafc; -webkit-tap-highlight-color: transparent; }
+      body { font-family: 'Sarabun', sans-serif; background-color: #f8fafc; color: #1e293b; font-size: 0.875rem; line-height: 1.5; -webkit-tap-highlight-color: transparent; }
       h1, h2, h3, h4, h5, h6, button, input, select, textarea { font-family: 'Prompt', sans-serif; }
+
+      /* Compact & Balanced Typography Scale */
+      h1 { font-size: 1.5rem !important; line-height: 1.3 !important; font-weight: 700 !important; }
+      h2 { font-size: 1.25rem !important; line-height: 1.35 !important; font-weight: 700 !important; }
+      h3 { font-size: 1.125rem !important; line-height: 1.4 !important; font-weight: 700 !important; }
+      h4 { font-size: 1rem !important; line-height: 1.4 !important; font-weight: 700 !important; }
+      h5 { font-size: 0.9375rem !important; line-height: 1.4 !important; font-weight: 700 !important; }
+      h6 { font-size: 0.875rem !important; line-height: 1.4 !important; font-weight: 700 !important; }
+
       .custom-scrollbar::-webkit-scrollbar { width: 4px; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
       @keyframes fade-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
@@ -48,8 +57,7 @@
       .animate-shake { animation: shake 0.3s ease-in-out infinite; }
 
       /* ==========================================================================
-         WCAG 2.1 AA Compliant High-Contrast Form Inputs
-         Optimized for clarity, low-vision users, and elderly users.
+         Modern Compact Design - High Clarity Form Inputs & Typography
          ========================================================================== */
 
       /* 1. Base style for all text, select, textarea, date, number, password inputs */
@@ -57,111 +65,110 @@
       select,
       textarea {
         font-family: 'Prompt', sans-serif !important;
-        border-width: 2px !important;
+        border-width: 1.5px !important;
         border-style: solid !important;
-        border-color: #94a3b8 !important; /* High-contrast border (slate-400 - WCAG >3:1 against white/bg) */
+        border-color: #94a3b8 !important; /* #94A3B8 slate-400 */
         background-color: #ffffff !important;
-        color: #0f172a !important; /* High-contrast text color (slate-900 - WCAG >7:1) */
-        font-size: 1rem !important; /* 16px minimum font size for high legibility & no zoom on iOS */
+        color: #0f172a !important; /* slate-900 */
+        font-size: 0.875rem !important; /* 14px compact font size */
         font-weight: 600 !important;
-        line-height: 1.5 !important;
-        border-radius: 0.875rem !important; /* Rounded corners (rounded-xl) */
-        min-height: 48px !important; /* Touch target minimum 48px for WCAG 2.1 AA */
-        transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background-color 0.2s ease-in-out !important;
+        line-height: 1.4 !important;
+        border-radius: 0.625rem !important; /* 10px rounded corners */
+        min-height: 38px !important;
+        transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out, background-color 0.15s ease-in-out !important;
         box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
       }
 
-      /* 2. Vertical Padding & Height */
+      /* 2. Compact Vertical Padding */
       input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"]),
       select,
       textarea {
-        padding-top: 0.75rem !important;
-        padding-bottom: 0.75rem !important;
+        padding-top: 0.45rem !important;
+        padding-bottom: 0.45rem !important;
       }
 
       /* 3. Horizontal Padding (respecting pl- icon classes if present) */
       input:not([class*="pl-"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
       select:not([class*="pl-"]),
       textarea:not([class*="pl-"]) {
-        padding-left: 1rem !important;
+        padding-left: 0.875rem !important;
       }
       input:not([class*="pr-"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
       select:not([class*="pr-"]),
       textarea:not([class*="pr-"]) {
-        padding-right: 1rem !important;
+        padding-right: 0.875rem !important;
       }
 
       /* 4. High-contrast placeholders */
       input::placeholder,
       textarea::placeholder {
-        color: #64748b !important; /* slate-500 - contrast ratio > 4.5:1 against white */
+        color: #94a3b8 !important; /* slate-400 */
         font-weight: 500 !important;
-        opacity: 1 !important;
+        opacity: 0.9 !important;
       }
 
-      /* 5. Hover Effect */
+      /* 5. Hover Effect - Border darkens slightly */
       input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):hover,
       select:hover,
       textarea:hover {
-        border-color: #2563eb !important; /* Blue-600 */
+        border-color: #64748b !important; /* slate-500 */
         background-color: #ffffff !important;
       }
 
-      /* 6. Focus Effect - Bright blue border and prominent glowing focus ring */
+      /* 6. Focus Effect - Blue border with subtle shadow ring */
       input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):focus,
       select:focus,
       textarea:focus {
-        border-color: #1d4ed8 !important; /* Blue-700 */
+        border-color: #2563eb !important; /* blue-600 */
         background-color: #ffffff !important;
-        outline: 3px solid #60a5fa !important; /* Sky-400 visible outline */
-        outline-offset: 2px !important;
-        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3) !important;
+        outline: none !important;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15), 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
       }
 
-      /* 7. Error State - Bright Red/Rose Border & Ring */
+      /* 7. Error State */
       input.is-error,
       input[aria-invalid="true"],
       input:invalid:not(:placeholder-shown),
       select.is-error,
       textarea.is-error {
-        border-color: #e11d48 !important; /* Rose-600 */
-        background-color: #fff1f2 !important; /* Rose-50 */
+        border-color: #f43f5e !important;
+        background-color: #fff1f2 !important;
       }
       input.is-error:focus,
       input[aria-invalid="true"]:focus,
       input:invalid:not(:placeholder-shown):focus,
       select.is-error:focus,
       textarea.is-error:focus {
-        border-color: #be123c !important; /* Rose-700 */
-        outline-color: #f43f5e !important;
-        box-shadow: 0 0 0 4px rgba(225, 29, 72, 0.3) !important;
+        border-color: #e11d48 !important;
+        outline: none !important;
+        box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.15) !important;
       }
 
-      /* 8. Success State - Emerald Green Border & Ring */
+      /* 8. Success State */
       input.is-success,
       select.is-success,
       textarea.is-success {
-        border-color: #059669 !important; /* Emerald-600 */
-        background-color: #f0fdf4 !important; /* Emerald-50 */
+        border-color: #10b981 !important;
+        background-color: #f0fdf4 !important;
       }
       input.is-success:focus,
       select.is-success:focus,
       textarea.is-success:focus {
-        border-color: #047857 !important; /* Emerald-700 */
-        outline-color: #10b981 !important;
-        box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.3) !important;
+        border-color: #059669 !important;
+        outline: none !important;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15) !important;
       }
 
-      /* 9. Uniform Select & Date/Number/Password inputs styling */
+      /* 9. Uniform Select & Date/Time inputs */
       select {
         cursor: pointer;
         appearance: none;
         -webkit-appearance: none;
-        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23334155' stroke-width='2.5'%3e%3cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3e%3c/svg%3e") !important;
-        background-position: right 1rem center !important;
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23475569' stroke-width='2'%3e%3cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3e%3c/svg%3e") !important;
+        background-position: right 0.75rem center !important;
         background-repeat: no-repeat !important;
-        background-size: 1.25rem 1.25rem !important;
-        padding-right: 2.75rem !important;
+        background-size: 1rem 1rem !important;
+        padding-right: 2.25rem !important;
       }
 
       input[type="date"],
@@ -170,21 +177,22 @@
         cursor: pointer;
       }
 
-      /* Disabled state with clear visual distinction */
+      /* Disabled state */
       input:disabled,
       select:disabled,
       textarea:disabled {
-        background-color: #f1f5f9 !important;
+        background-color: #f8fafc !important;
         border-color: #cbd5e1 !important;
-        color: #64748b !important;
+        color: #94a3b8 !important;
         cursor: not-allowed !important;
         opacity: 0.75 !important;
       }
 
-      /* Labels - high contrast and distinct spacing */
+      /* Labels - clear, compact & readable */
       label {
-        color: #1e293b !important; /* slate-800 for high text contrast */
+        color: #334155 !important;
         font-weight: 700 !important;
+        font-size: 0.8125rem !important;
       }
     </style>
     
