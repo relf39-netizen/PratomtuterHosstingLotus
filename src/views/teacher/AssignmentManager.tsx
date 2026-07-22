@@ -8,8 +8,12 @@ import {
   Sparkles, PlusCircle, History, 
   Users, Info, UploadCloud, Download, 
   Settings, ClipboardCheck, BookOpen, GraduationCap, Lock,
-  Printer
+  Printer, Layers, BarChart3, Target, Award, TrendingUp, Search
 } from 'lucide-react';
+import { 
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, 
+  Tooltip, ResponsiveContainer, Cell, Legend
+} from 'recharts';
 import { addAssignment, deleteAssignment, addQuestion, getQuestionsByAssignment, getClassrooms, getQuestionsBySubjectAndGrade, toggleAssignmentStatus } from '../../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../../services/aiService';
 
@@ -31,7 +35,9 @@ const GRADE_LABELS: Record<string, string> = {
 };
 
 const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subjects, students, stats, teacher, onRefresh }) => {
-  const [activeTab, setActiveTab] = useState<'CREATE' | 'HISTORY' | 'EXAMS'>('CREATE');
+  const [activeTab, setActiveTab] = useState<'CREATE' | 'UNITS' | 'EXAMS' | 'HISTORY'>('CREATE');
+  const [unitSearch, setUnitSearch] = useState('');
+  const [unitGradeFilter, setUnitGradeFilter] = useState('ALL');
 
   // Exam Creator States
   const [showExamCreator, setShowExamCreator] = useState(false);
@@ -276,6 +282,63 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
           return a.createdBy === teacher.name; // Normal teacher sees only their own
       });
   }, [assignments, isDirector, teacher.name, teacher.school]);
+
+  // 📊 Chart Data for Midterm & Final Exams
+  const examChartData = useMemo(() => {
+    const examAssignments = displayedAssignments.filter(a => a.category === 'MIDTERM' || a.category === 'FINAL' || a.category === 'EXAM');
+    const grouped: Record<string, { subject: string; midtermTotal: number; midtermSum: number; finalTotal: number; finalSum: number }> = {};
+
+    examAssignments.forEach(a => {
+      const sub = a.subject || 'ทั่วไป';
+      if (!grouped[sub]) {
+        grouped[sub] = { subject: sub, midtermTotal: 0, midtermSum: 0, finalTotal: 0, finalSum: 0 };
+      }
+
+      const aStats = stats.filter(s => s.assignmentId === a.id);
+      const avg = aStats.length > 0 ? (aStats.reduce((sum, s) => sum + (s.score / (s.totalQuestions || 1)) * 100, 0) / aStats.length) : 0;
+
+      if (a.category === 'MIDTERM') {
+        grouped[sub].midtermTotal += 1;
+        grouped[sub].midtermSum += avg;
+      } else {
+        grouped[sub].finalTotal += 1;
+        grouped[sub].finalSum += avg;
+      }
+    });
+
+    return Object.values(grouped).map(g => ({
+      subject: g.subject,
+      midtermAvg: g.midtermTotal > 0 ? Math.round(g.midtermSum / g.midtermTotal) : 0,
+      finalAvg: g.finalTotal > 0 ? Math.round(g.finalSum / g.finalTotal) : 0,
+    }));
+  }, [displayedAssignments, stats]);
+
+  // 📚 Chart Data & List for Learning Units
+  const unitAssignments = useMemo(() => {
+    return displayedAssignments.filter(a => 
+      a.category === 'UNIT_TEST' || 
+      (a.title && (a.title.includes('หน่วย') || a.title.includes('Unit')) && a.category !== 'MIDTERM' && a.category !== 'FINAL')
+    );
+  }, [displayedAssignments]);
+
+  const unitChartData = useMemo(() => {
+    return unitAssignments.map(a => {
+      const aStats = stats.filter(s => s.assignmentId === a.id);
+      const avgScore = aStats.length > 0 
+        ? Math.round(aStats.reduce((sum, s) => sum + (s.score / (s.totalQuestions || 1)) * 100, 0) / aStats.length) 
+        : 0;
+
+      return {
+        id: a.id,
+        title: (a.title || a.subject).length > 18 ? (a.title || a.subject).substring(0, 18) + '...' : (a.title || a.subject),
+        fullTitle: a.title || a.subject,
+        subject: a.subject,
+        grade: GRADE_LABELS[a.grade || 'ALL'] || a.grade,
+        avgScore,
+        submissions: aStats.length
+      };
+    });
+  }, [unitAssignments, stats]);
 
   const filteredSourceAssignments = useMemo(() => {
     return displayedAssignments.filter(a => 
@@ -867,24 +930,30 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
   return (
     <div className="max-w-6xl mx-auto animate-fade-in pb-10 font-prompt">
         {/* Main Tab Navigation */}
-        <div className="flex bg-slate-100 p-1.5 rounded-[22px] mb-8 w-fit shadow-inner">
+        <div className="flex bg-slate-100 p-1.5 rounded-[25px] mb-8 w-fit shadow-inner flex-wrap gap-1">
             <button 
                 onClick={() => setActiveTab('CREATE')} 
-                className={`px-8 py-2.5 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${activeTab === 'CREATE' ? 'bg-white text-orange-600 shadow-md' : 'text-slate-600 hover:text-slate-800'}`}
+                className={`px-6 py-2.5 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${activeTab === 'CREATE' ? 'bg-white text-orange-600 shadow-md' : 'text-slate-600 hover:text-slate-800'}`}
             >
                 <PlusCircle size={18}/> มอบหมายงานใหม่
             </button>
             <button 
-                onClick={() => setActiveTab('HISTORY')} 
-                className={`px-8 py-2.5 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${activeTab === 'HISTORY' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-600 hover:text-slate-800'}`}
+                onClick={() => setActiveTab('UNITS')} 
+                className={`px-6 py-2.5 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${activeTab === 'UNITS' ? 'bg-white text-emerald-600 shadow-md' : 'text-slate-600 hover:text-slate-800'}`}
             >
-                <History size={18}/> รายการสั่งการบ้าน
+                <Layers size={18}/> แบบทดสอบหน่วยการเรียนรู้
             </button>
             <button 
                 onClick={() => setActiveTab('EXAMS')} 
-                className={`px-8 py-2.5 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${activeTab === 'EXAMS' ? 'bg-white text-rose-600 shadow-md' : 'text-slate-600 hover:text-slate-800'}`}
+                className={`px-6 py-2.5 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${activeTab === 'EXAMS' ? 'bg-white text-rose-600 shadow-md' : 'text-slate-600 hover:text-slate-800'}`}
             >
                 <GraduationCap size={18}/> สอบกลางภาค/ปลายภาค
+            </button>
+            <button 
+                onClick={() => setActiveTab('HISTORY')} 
+                className={`px-6 py-2.5 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${activeTab === 'HISTORY' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-600 hover:text-slate-800'}`}
+            >
+                <History size={18}/> รายการสั่งการบ้าน
             </button>
         </div>
 
@@ -898,8 +967,18 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                         
                         <div className="space-y-6">
                             <div>
-                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">หัวข้อการบ้าน</label>
-                                <input type="text" value={assignTitle} onChange={e => setAssignTitle(e.target.value)} placeholder="ระบุชื่อชุดงาน เช่น ทบทวนบทที่ 1" className="w-full p-4 rounded-2xl border-2 border-slate-100 focus:border-orange-400 focus:bg-white bg-slate-50 outline-none transition-all font-bold shadow-inner"/>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">ประเภทงาน / การทดสอบ</label>
+                                <select value={assignCategory} onChange={e => setAssignCategory(e.target.value as AssignmentCategory)} className="w-full p-4 rounded-2xl border-2 border-slate-100 bg-slate-50 font-black text-slate-800 outline-none focus:border-orange-400">
+                                    <option value="GENERAL">📝 การบ้านทั่วไป</option>
+                                    <option value="UNIT_TEST">📚 แบบทดสอบหน่วยการเรียนรู้</option>
+                                    <option value="MIDTERM">🎓 สอบกลางภาค</option>
+                                    <option value="FINAL">🏆 สอบปลายภาค</option>
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2 ml-1">หัวข้อการบ้าน / ชื่อหน่วยการเรียนรู้</label>
+                                <input type="text" value={assignTitle} onChange={e => setAssignTitle(e.target.value)} placeholder="ระบุชื่อชุดงาน เช่น แบบทดสอบหน่วยที่ 1 เรื่อง การบวกเลข" className="w-full p-4 rounded-2xl border-2 border-slate-100 focus:border-orange-400 focus:bg-white bg-slate-50 outline-none transition-all font-bold shadow-inner"/>
                             </div>
 
                             <div className="grid grid-cols-2 gap-4">
@@ -1011,7 +1090,6 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                         <div className="font-black text-slate-800 text-lg mb-4 pr-10">{i+1}. {q.text}</div>
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm text-slate-500 pl-4 border-l-2 border-indigo-100 font-bold">
                                             <div className={q.correct === '1' ? 'text-emerald-600' : ''}>1. {q.c1}</div>
-                                            {/* Fix: Changed q.code to q.correct and removed redundant label text */}
                                             <div className={q.correct === '2' ? 'text-emerald-600' : ''}>2. {q.c2}</div>
                                             <div className={q.correct === '3' ? 'text-emerald-600' : ''}>3. {q.c3}</div>
                                             <div className={q.correct === '4' ? 'text-emerald-600' : ''}>4. {q.c4}</div>
@@ -1034,6 +1112,245 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                             </div>
                         )}
                     </div>
+                </div>
+            </div>
+        )}
+
+        {/* 📚 TAB: LEARNING UNITS (หน่วยการเรียนรู้) */}
+        {activeTab === 'UNITS' && (
+            <div className="space-y-8 animate-slide-up">
+                {/* Section Header & Create Action */}
+                <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                        <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
+                            <Layers className="text-emerald-500" size={30}/> แบบทดสอบประจำหน่วยการเรียนรู้
+                        </h4>
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1 ml-11">Learning Units & Knowledge Evaluation Dashboard</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <button 
+                            onClick={() => {
+                                setAssignCategory('UNIT_TEST');
+                                setAssignTitle('แบบทดสอบหน่วยการเรียนรู้ที่ ');
+                                setActiveTab('CREATE');
+                            }}
+                            className="bg-emerald-600 text-white px-6 py-3 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-emerald-100 hover:bg-emerald-500 hover:scale-105 active:scale-95 transition-all"
+                        >
+                            <PlusCircle size={20}/> สร้างแบบทดสอบหน่วยใหม่
+                        </button>
+                        <button onClick={onRefresh} className="p-3 bg-slate-50 text-slate-400 hover:text-emerald-600 rounded-2xl shadow-sm transition active:rotate-180 duration-500 border border-slate-100"><RefreshCw size={20}/></button>
+                    </div>
+                </div>
+
+                {/* 📊 Separate Analytics Chart for Learning Units */}
+                <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h5 className="font-black text-lg text-slate-800 flex items-center gap-2">
+                                <BarChart3 className="text-emerald-500" size={22}/> กราฟประเมินผลสัมฤทธิ์ตามหน่วยการเรียนรู้
+                            </h5>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider ml-7">Average Score Percentage per Learning Unit</p>
+                        </div>
+                    </div>
+
+                    {unitChartData.length > 0 ? (
+                        <div className="h-72 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={unitChartData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                    <XAxis dataKey="title" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 'bold' }} />
+                                    <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 'bold' }} unit="%" />
+                                    <Tooltip 
+                                        formatter={(val: any) => [`${val}%`, 'คะแนนเฉลี่ย']}
+                                        labelFormatter={(label, items) => {
+                                            const item = items?.[0]?.payload;
+                                            return item ? `${item.fullTitle} (${item.grade} - ${item.subject})` : label;
+                                        }}
+                                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontFamily: 'Prompt' }}
+                                    />
+                                    <Bar dataKey="avgScore" radius={[12, 12, 0, 0]}>
+                                        {unitChartData.map((entry, idx) => (
+                                            <Cell key={`cell-${idx}`} fill={entry.avgScore >= 70 ? '#10b981' : entry.avgScore >= 50 ? '#f59e0b' : '#ef4444'} />
+                                        ))}
+                                    </Bar>
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : (
+                        <div className="py-12 text-center text-slate-400 font-bold bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                            ยังไม่มีข้อมูลผลการประเมินหน่วยการเรียนรู้
+                        </div>
+                    )}
+
+                    {/* Summary Metric Cards */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100">
+                        <div className="p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
+                            <div className="text-[10px] font-black text-emerald-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <BookOpen size={12}/> หน่วยการเรียนรู้ทั้งหมด
+                            </div>
+                            <div className="text-2xl font-black text-slate-800">{unitAssignments.length} ชุด</div>
+                        </div>
+                        <div className="p-4 bg-amber-50/50 rounded-2xl border border-amber-100">
+                            <div className="text-[10px] font-black text-amber-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <Target size={12}/> คะแนนเฉลี่ยรวมทุกหน่วย
+                            </div>
+                            <div className="text-2xl font-black text-slate-800">
+                                {unitChartData.length > 0 
+                                    ? Math.round(unitChartData.reduce((s, u) => s + u.avgScore, 0) / unitChartData.length) 
+                                    : 0}%
+                            </div>
+                        </div>
+                        <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
+                            <div className="text-[10px] font-black text-indigo-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <Users size={12}/> นักเรียนที่ประเมินแล้ว
+                            </div>
+                            <div className="text-2xl font-black text-slate-800">
+                                {unitChartData.reduce((s, u) => s + u.submissions, 0)} ครั้ง
+                            </div>
+                        </div>
+                        <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-100">
+                            <div className="text-[10px] font-black text-purple-600 uppercase tracking-wider mb-1 flex items-center gap-1">
+                                <Award size={12}/> เปิดให้นักเรียนสอบ
+                            </div>
+                            <div className="text-2xl font-black text-slate-800">
+                                {unitAssignments.filter(u => u.status === 'OPEN').length} / {unitAssignments.length}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Filter & Search Bar */}
+                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                    <div className="relative w-full md:w-80">
+                        <Search className="absolute left-4 top-3.5 text-slate-400" size={18}/>
+                        <input 
+                            type="text" 
+                            value={unitSearch} 
+                            onChange={e => setUnitSearch(e.target.value)}
+                            placeholder="ค้นหาชื่อหน่วยการเรียนรู้ หรือ วิชา..." 
+                            className="w-full pl-11 pr-4 py-3 bg-white rounded-2xl border border-slate-200 text-sm font-bold text-slate-700 outline-none focus:border-emerald-500 shadow-sm"
+                        />
+                    </div>
+                    <div className="flex items-center gap-2 w-full md:w-auto overflow-x-auto">
+                        <span className="text-xs font-black text-slate-400 uppercase tracking-wider shrink-0">ระดับชั้น:</span>
+                        {['ALL', ...availableGrades].map(g => (
+                            <button 
+                                key={g} 
+                                onClick={() => setUnitGradeFilter(g)}
+                                className={`px-4 py-2 rounded-xl text-xs font-black transition-all ${unitGradeFilter === g ? 'bg-emerald-600 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-50'}`}
+                            >
+                                {GRADE_LABELS[g] || g}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Cards Grid: Learning Unit Tests */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {unitAssignments
+                        .filter(a => {
+                            const matchSearch = !unitSearch || (a.title || a.subject).toLowerCase().includes(unitSearch.toLowerCase());
+                            const matchGrade = unitGradeFilter === 'ALL' || a.grade === unitGradeFilter;
+                            return matchSearch && matchGrade;
+                        })
+                        .slice().reverse().map((a) => {
+                            const submittedCount = countSubmitted(a.id);
+                            const isLocked = a.status === 'LOCKED';
+
+                            return (
+                                <div key={a.id} className="bg-white rounded-[35px] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 p-7 flex flex-col justify-between relative overflow-hidden group">
+                                    <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-emerald-400 to-teal-500"></div>
+                                    
+                                    <div>
+                                        <div className="flex items-center justify-between gap-2 mb-4">
+                                            <span className="bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full text-[10px] font-black border border-emerald-100 flex items-center gap-1">
+                                                <Layers size={12}/> แบบทดสอบหน่วยการเรียนรู้
+                                            </span>
+                                            <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-black">
+                                                {GRADE_LABELS[a.grade || 'ALL'] || a.grade}
+                                            </span>
+                                        </div>
+
+                                        <h5 className="font-black text-xl text-slate-800 leading-snug mb-2 group-hover:text-emerald-600 transition-colors">
+                                            {a.title || a.subject}
+                                        </h5>
+                                        <div className="text-xs font-bold text-slate-400 mb-6 flex items-center gap-3">
+                                            <span>วิชา {a.subject}</span>
+                                            <span>•</span>
+                                            <span>{a.questionCount} ข้อ</span>
+                                        </div>
+
+                                        <div className="space-y-3 bg-slate-50 p-4 rounded-2xl mb-6">
+                                            <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                                                <span className="flex items-center gap-1.5"><Clock size={14} className="text-slate-400"/> กำหนดส่ง:</span>
+                                                <span>{new Date(a.deadline).toLocaleDateString('th-TH')}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                                                <span className="flex items-center gap-1.5"><Users size={14} className="text-slate-400"/> ทำแบบทดสอบแล้ว:</span>
+                                                <span className="text-emerald-600 font-black">{submittedCount} คน</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action & Control Footer */}
+                                    <div className="space-y-3 pt-4 border-t border-slate-100">
+                                        {/* Status Toggle Button */}
+                                        <button 
+                                            type="button"
+                                            onClick={async () => {
+                                                await toggleAssignmentStatus(a.id, a.status || 'LOCKED');
+                                                onRefresh();
+                                            }}
+                                            className={`w-full py-3 rounded-2xl text-xs font-black border-2 flex items-center justify-center gap-2 transition-all shadow-sm ${
+                                                isLocked 
+                                                    ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100' 
+                                                    : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                                            }`}
+                                        >
+                                            {isLocked ? (
+                                                <><Lock size={14}/> ปิดระบบสอบ (นักเรียนยังเข้าทำไม่ได้)</>
+                                            ) : (
+                                                <><Sparkles size={14}/> 🟢 เปิดให้นักเรียนทำแบบทดสอบแล้ว</>
+                                            )}
+                                        </button>
+
+                                        {/* Utility Buttons */}
+                                        <div className="flex gap-2">
+                                            <button 
+                                                type="button"
+                                                onClick={() => handleOpenPrintPreview(a)} 
+                                                className="flex-1 bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-700 py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border border-amber-200 transition shadow-sm"
+                                                title="พิมพ์แบบทดสอบกระดาษ"
+                                            >
+                                                <Printer size={16}/> พิมพ์แบบทดสอบ
+                                            </button>
+                                            <button 
+                                                onClick={() => handleOpenDetail(a)} 
+                                                className="p-3 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 rounded-2xl border border-indigo-100 transition shadow-sm"
+                                                title="ดูรายละเอียดผลสอบ"
+                                            >
+                                                <Eye size={18}/>
+                                            </button>
+                                            <button 
+                                                onClick={async () => { if(confirm('ยืนยันลบแบบทดสอบหน่วยการเรียนรู้นี้?')) { await deleteAssignment(a.id); onRefresh(); } }} 
+                                                className="p-3 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-500 rounded-2xl border border-rose-100 transition shadow-sm"
+                                                title="ลบ"
+                                            >
+                                                <Trash2 size={18}/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+
+                    {unitAssignments.length === 0 && (
+                        <div className="col-span-full py-20 text-center bg-white rounded-[40px] border border-dashed border-slate-200">
+                            <Layers size={48} className="mx-auto text-slate-300 mb-3"/>
+                            <div className="font-black text-lg text-slate-600">ยังไม่มีแบบทดสอบประจำหน่วยการเรียนรู้</div>
+                            <p className="text-xs font-bold text-slate-400 mt-1">คลิกปุ่ม "สร้างแบบทดสอบหน่วยใหม่" ด้านบนเพื่อเริ่มสร้าง</p>
+                        </div>
+                    )}
                 </div>
             </div>
         )}
@@ -1088,97 +1405,168 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
             </div>
         )}
 
+        {/* 🎓 TAB: EXAMS (สอบกลางภาค / ปลายภาค - Cards & Chart) */}
         {activeTab === 'EXAMS' && (
-            <div className="bg-white rounded-[45px] border border-slate-100 shadow-sm overflow-hidden animate-slide-up">
-                <div className="p-8 bg-slate-50 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div className="space-y-8 animate-slide-up">
+                {/* Header & Create Action */}
+                <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div>
-                        <h4 className="font-black text-xl text-slate-700 flex items-center gap-3"><GraduationCap className="text-rose-500" size={26}/> รายการสอบกลางภาค / ปลายภาค</h4>
-                        <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1 ml-9">Midterm & Final Examination Management</p>
+                        <h4 className="font-black text-2xl text-slate-800 flex items-center gap-3">
+                            <GraduationCap className="text-rose-500" size={30}/> ระบบสอบกลางภาคและสอบปลายภาค
+                        </h4>
+                        <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1 ml-11">Midterm & Final Examination Portal</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-3">
                         <button 
                             onClick={() => setShowExamCreator(true)}
-                            className="bg-rose-600 text-white px-6 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-rose-100 hover:scale-105 active:scale-95 transition-all"
+                            className="bg-rose-600 text-white px-6 py-3 rounded-2xl font-black text-sm flex items-center gap-2 shadow-lg shadow-rose-100 hover:bg-rose-500 hover:scale-105 active:scale-95 transition-all"
                         >
-                            <PlusCircle size={20}/> จัดทำข้อสอบใหม่
+                            <PlusCircle size={20}/> จัดทำข้อสอบกลางภาค/ปลายภาคใหม่
                         </button>
-                        <button onClick={onRefresh} className="p-2.5 bg-white text-slate-400 hover:text-rose-600 rounded-2xl shadow-sm transition active:rotate-180 duration-500 border border-slate-100"><RefreshCw size={20}/></button>
+                        <button onClick={onRefresh} className="p-3 bg-slate-50 text-slate-400 hover:text-rose-600 rounded-2xl shadow-sm transition active:rotate-180 duration-500 border border-slate-100"><RefreshCw size={20}/></button>
                     </div>
                 </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead className="bg-white text-slate-400 font-black border-b uppercase tracking-widest text-[10px]">
-                            <tr><th className="p-8">หัวข้อสอบ</th><th className="p-8 text-center">ระดับชั้น</th><th className="p-8 text-center">ประเภท</th><th className="p-8 text-center">สถานะระบบสอบ</th><th className="p-8 text-center">ผู้เข้าสอบแล้ว</th><th className="p-8 text-right">จัดการ</th></tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-50">
-                            {displayedAssignments.filter(a => a.category === 'MIDTERM' || a.category === 'FINAL' || a.category === 'EXAM').slice().reverse().map((a) => {
-                                const submittedCount = countSubmitted(a.id);
-                                return (
-                                    <tr key={a.id} className="hover:bg-slate-50 transition-colors group">
-                                        <td className="p-8">
-                                            <div className="font-black text-slate-800 text-lg leading-tight">{a.title || a.subject}</div>
-                                            <div className="text-xs text-slate-400 mt-2 font-bold flex items-center gap-4 uppercase tracking-tighter">
-                                                <span className="flex items-center gap-1.5"><Clock size={14}/> ส่งภายใน {new Date(a.deadline).toLocaleDateString('th-TH')}</span>
-                                                <span className="bg-slate-100 px-2 py-0.5 rounded text-rose-500">{a.questionCount} ข้อ</span>
-                                            </div>
-                                        </td>
-                                        <td className="p-8 text-center">
-                                            <span className="bg-rose-50 text-rose-700 px-4 py-1.5 rounded-full font-black text-xs border border-rose-100 shadow-sm">{GRADE_LABELS[a.grade || 'ALL'] || a.grade}</span>
-                                        </td>
-                                        <td className="p-8 text-center">
-                                            <span className={`px-4 py-1.5 rounded-full font-black text-xs border shadow-sm ${
-                                                a.category === 'MIDTERM' 
+
+                {/* 📊 Dedicated Chart Card for Midterm & Final Exams */}
+                <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h5 className="font-black text-lg text-slate-800 flex items-center gap-2">
+                                <TrendingUp className="text-rose-500" size={22}/> กราฟเปรียบเทียบผลการสอบกลางภาคและปลายภาค
+                            </h5>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider ml-7">Midterm vs Final Average Scores by Subject</p>
+                        </div>
+                    </div>
+
+                    {examChartData.length > 0 ? (
+                        <div className="h-72 w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={examChartData} margin={{ top: 20, right: 30, left: 0, bottom: 20 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9"/>
+                                    <XAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 11, fontWeight: 'bold' }} />
+                                    <YAxis domain={[0, 100]} tick={{ fill: '#64748b', fontSize: 11, fontWeight: 'bold' }} unit="%" />
+                                    <Tooltip 
+                                        formatter={(val: any) => [`${val}%`]}
+                                        contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.1)', fontFamily: 'Prompt' }}
+                                    />
+                                    <Legend wrapperStyle={{ fontFamily: 'Prompt', fontSize: '12px', fontWeight: 'bold' }} />
+                                    <Bar dataKey="midtermAvg" name="คะแนนเฉลี่ยกลางภาค (%)" fill="#f59e0b" radius={[8, 8, 0, 0]} />
+                                    <Bar dataKey="finalAvg" name="คะแนนเฉลี่ยปลายภาค (%)" fill="#6366f1" radius={[8, 8, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    ) : (
+                        <div className="py-12 text-center text-slate-400 font-bold bg-slate-50 rounded-3xl border border-dashed border-slate-200">
+                            ยังไม่มีข้อมูลการจัดทำข้อสอบกลางภาค/ปลายภาค
+                        </div>
+                    )}
+                </div>
+
+                {/* Cards Grid: Midterm & Final Exams */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {displayedAssignments
+                        .filter(a => a.category === 'MIDTERM' || a.category === 'FINAL' || a.category === 'EXAM')
+                        .slice().reverse().map((a) => {
+                            const submittedCount = countSubmitted(a.id);
+                            const isMidterm = a.category === 'MIDTERM';
+                            const isLocked = a.status === 'LOCKED';
+
+                            return (
+                                <div key={a.id} className="bg-white rounded-[35px] border border-slate-100 shadow-sm hover:shadow-xl transition-all duration-300 p-7 flex flex-col justify-between relative overflow-hidden group">
+                                    <div className={`absolute top-0 left-0 w-full h-2 ${isMidterm ? 'bg-gradient-to-r from-amber-400 to-orange-500' : 'bg-gradient-to-r from-indigo-500 to-purple-600'}`}></div>
+                                    
+                                    <div>
+                                        <div className="flex items-center justify-between gap-2 mb-4">
+                                            <span className={`px-3 py-1 rounded-full text-[10px] font-black border flex items-center gap-1 ${
+                                                isMidterm 
                                                     ? 'bg-amber-50 text-amber-700 border-amber-100' 
                                                     : 'bg-indigo-50 text-indigo-700 border-indigo-100'
                                             }`}>
-                                                {a.category === 'MIDTERM' ? 'กลางภาค' : 'ปลายภาค'}
+                                                <GraduationCap size={12}/> {isMidterm ? 'สอบกลางภาค' : 'สอบปลายภาค'}
                                             </span>
-                                        </td>
-                                        <td className="p-8 text-center">
+                                            <span className="bg-slate-100 text-slate-600 px-3 py-1 rounded-full text-[10px] font-black">
+                                                {GRADE_LABELS[a.grade || 'ALL'] || a.grade}
+                                            </span>
+                                        </div>
+
+                                        <h5 className="font-black text-xl text-slate-800 leading-snug mb-2 group-hover:text-rose-600 transition-colors">
+                                            {a.title || a.subject}
+                                        </h5>
+                                        <div className="text-xs font-bold text-slate-400 mb-6 flex items-center gap-3">
+                                            <span>วิชา {a.subject}</span>
+                                            <span>•</span>
+                                            <span>{a.questionCount} ข้อ</span>
+                                        </div>
+
+                                        <div className="space-y-3 bg-slate-50 p-4 rounded-2xl mb-6">
+                                            <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                                                <span className="flex items-center gap-1.5"><Clock size={14} className="text-slate-400"/> กำหนดส่ง:</span>
+                                                <span>{new Date(a.deadline).toLocaleDateString('th-TH')}</span>
+                                            </div>
+                                            <div className="flex justify-between items-center text-xs font-bold text-slate-600">
+                                                <span className="flex items-center gap-1.5"><Users size={14} className="text-slate-400"/> นักเรียนเข้าสอบแล้ว:</span>
+                                                <span className="text-rose-600 font-black">{submittedCount} คน</span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Control & Action Footer */}
+                                    <div className="space-y-3 pt-4 border-t border-slate-100">
+                                        <button 
+                                            type="button"
+                                            onClick={async () => {
+                                                await toggleAssignmentStatus(a.id, a.status || 'LOCKED');
+                                                onRefresh();
+                                            }}
+                                            className={`w-full py-3 rounded-2xl text-xs font-black border-2 flex items-center justify-center gap-2 transition-all shadow-sm ${
+                                                isLocked 
+                                                    ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100' 
+                                                    : 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:bg-emerald-100'
+                                            }`}
+                                        >
+                                            {isLocked ? (
+                                                <><Lock size={14}/> ปิดระบบสอบ (นักเรียนยังเข้าทำไม่ได้)</>
+                                            ) : (
+                                                <><Sparkles size={14}/> 🟢 เปิดให้นักเรียนสอบได้แล้ว</>
+                                            )}
+                                        </button>
+
+                                        <div className="flex gap-2">
                                             <button 
                                                 type="button"
-                                                onClick={async () => {
-                                                    await toggleAssignmentStatus(a.id, a.status || 'LOCKED');
-                                                    onRefresh();
-                                                }}
-                                                className={`px-4 py-2 rounded-xl text-xs font-black border-2 flex items-center justify-center gap-1.5 mx-auto transition-all ${
-                                                    a.status === 'LOCKED' 
-                                                        ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100' 
-                                                        : 'bg-emerald-50 border-emerald-200 text-emerald-600 hover:bg-emerald-100'
-                                                }`}
+                                                onClick={() => handleOpenPrintPreview(a)} 
+                                                className="flex-1 bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-700 py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border border-amber-200 transition shadow-sm"
+                                                title="พิมพ์ข้อสอบกระดาษ"
                                             >
-                                                {a.status === 'LOCKED' ? (
-                                                    <><Lock size={12}/> ปิดระบบสอบ</>
-                                                ) : (
-                                                    <><Sparkles size={12}/> เปิดระบบสอบ</>
-                                                )}
+                                                <Printer size={16}/> พิมพ์ข้อสอบ
                                             </button>
-                                        </td>
-                                        <td className="p-8 text-center">
-                                            <div className="flex flex-col items-center">
-                                                <div className="text-lg font-black text-slate-700">{submittedCount}</div>
-                                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">นักเรียน</div>
-                                            </div>
-                                        </td>
-                                        <td className="p-8 text-right">
-                                            <div className="flex justify-end gap-3">
-                                                <button 
-                                                    type="button"
-                                                    onClick={() => handleOpenPrintPreview(a)} 
-                                                    className="bg-amber-50 text-amber-600 p-3.5 rounded-2xl hover:bg-amber-600 hover:text-white transition shadow-sm border border-amber-100"
-                                                    title="พิมพ์ข้อสอบสำหรับทบทวน"
-                                                >
-                                                    <Printer size={22}/>
-                                                </button>
-                                                <button onClick={() => handleOpenDetail(a)} className="bg-indigo-50 text-indigo-600 p-3.5 rounded-2xl hover:bg-indigo-600 hover:text-white transition shadow-sm border border-indigo-100"><Eye size={22}/></button>
-                                                <button onClick={async () => { if(confirm('ยืนยันลบชุดข้อสอบนี้?')) { await deleteAssignment(a.id); onRefresh(); } }} className="bg-red-50 text-red-500 p-3.5 rounded-2xl hover:bg-red-500 hover:text-white transition shadow-sm border border-red-100"><Trash2 size={22}/></button>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
+                                            <button 
+                                                onClick={() => handleOpenDetail(a)} 
+                                                className="p-3 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 rounded-2xl border border-indigo-100 transition shadow-sm"
+                                                title="ดูรายละเอียดการสอบ"
+                                            >
+                                                <Eye size={18}/>
+                                            </button>
+                                            <button 
+                                                onClick={async () => { if(confirm('ยืนยันลบชุดข้อสอบนี้?')) { await deleteAssignment(a.id); onRefresh(); } }} 
+                                                className="p-3 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-500 rounded-2xl border border-rose-100 transition shadow-sm"
+                                                title="ลบ"
+                                            >
+                                                <Trash2 size={18}/>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+
+                    {displayedAssignments.filter(a => a.category === 'MIDTERM' || a.category === 'FINAL' || a.category === 'EXAM').length === 0 && (
+                        <div className="col-span-full py-20 text-center bg-white rounded-[40px] border border-dashed border-slate-200">
+                            <GraduationCap size={48} className="mx-auto text-slate-300 mb-3"/>
+                            <div className="font-black text-lg text-slate-600">ยังไม่มีชุดข้อสอบกลางภาค/ปลายภาค</div>
+                            <p className="text-xs font-bold text-slate-400 mt-1">คลิกปุ่ม "จัดทำข้อสอบกลางภาค/ปลายภาคใหม่" ด้านบนเพื่อเริ่มสร้าง</p>
+                        </div>
+                    )}
                 </div>
             </div>
         )}

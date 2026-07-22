@@ -94,7 +94,7 @@ export interface Question {
   unit?: string;
 }
 
-export type AssignmentCategory = 'GENERAL' | 'ONET' | 'NT' | 'EXAM' | 'TGAT' | 'TPAT' | 'MIDTERM' | 'FINAL';
+export type AssignmentCategory = 'GENERAL' | 'ONET' | 'NT' | 'EXAM' | 'TGAT' | 'TPAT' | 'MIDTERM' | 'FINAL' | 'UNIT_TEST';
 
 export interface ExamResultDetail {
   questionId: string;
