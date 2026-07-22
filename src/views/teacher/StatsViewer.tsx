@@ -266,7 +266,7 @@ const StatsViewer: React.FC<StatsViewerProps> = ({ students, stats, canManageAll
                             placeholder="ค้นหาชื่อ หรือ รหัส..."
                             className="w-full pl-10 pr-4 py-3 rounded-2xl bg-slate-50 border-2 border-slate-100 focus:border-indigo-300 outline-none transition font-bold text-sm"
                         />
-                        <Search className="absolute left-3 top-3.5 text-slate-300" size={18}/>
+                        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" size={18}/>
                     </div>
                 </div>
 

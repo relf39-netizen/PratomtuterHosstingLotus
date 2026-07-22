@@ -340,16 +340,16 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack, ini
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
             <label className="block text-xs md:text-sm font-black text-slate-900 mb-2.5 ml-1 uppercase tracking-wider">เลขประจำตัวประชาชน (Username)</label>
-            <div className="relative">
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} className={`w-full p-5 pl-14 border-2 rounded-[1.5rem] bg-white outline-none transition font-bold text-slate-950 text-lg shadow-sm ${error ? 'is-error border-rose-500 bg-rose-50/50' : 'border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-100'}`} placeholder="13 หลัก" required aria-invalid={!!error} />
-                <User className="absolute left-5 top-5 text-slate-600" size={24} />
+            <div className="relative flex items-center">
+                <User className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none z-10" size={24} />
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} className={`w-full p-4 pl-14 border-2 rounded-[1.5rem] bg-white outline-none transition font-bold text-slate-950 text-lg shadow-sm ${error ? 'is-error border-rose-500 bg-rose-50/50' : 'border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-100'}`} placeholder="13 หลัก" required aria-invalid={!!error} />
             </div>
           </div>
           <div>
             <label className="block text-xs md:text-sm font-black text-slate-900 mb-2.5 ml-1 uppercase tracking-wider">รหัสผ่าน (Password)</label>
-            <div className="relative">
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={`w-full p-5 pl-14 border-2 rounded-[1.5rem] bg-white outline-none transition font-bold text-slate-950 text-lg shadow-sm ${error ? 'is-error border-rose-500 bg-rose-50/50' : 'border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-100'}`} placeholder="••••••" required aria-invalid={!!error} />
-              <Lock className="absolute left-5 top-5 text-slate-600" size={24} />
+            <div className="relative flex items-center">
+              <Lock className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-600 pointer-events-none z-10" size={24} />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={`w-full p-4 pl-14 border-2 rounded-[1.5rem] bg-white outline-none transition font-bold text-slate-950 text-lg shadow-sm ${error ? 'is-error border-rose-500 bg-rose-50/50' : 'border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-100'}`} placeholder="••••••" required aria-invalid={!!error} />
             </div>
           </div>
 

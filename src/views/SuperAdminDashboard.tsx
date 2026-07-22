@@ -525,8 +525,8 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
             <div className="animate-fade-in space-y-6">
                 {/* SEARCH BAR */}
                 <div className="bg-white p-6 rounded-[30px] shadow-sm border border-slate-100 flex flex-col md:flex-row gap-4 items-center">
-                    <div className="relative flex-1 w-full">
-                        <Search className="absolute left-4 top-3.5 text-slate-300" size={20}/>
+                    <div className="relative flex-1 w-full flex items-center">
+                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" size={20}/>
                         <input 
                             type="text" 
                             placeholder="ค้นหาชื่อโรงเรียน หรือรหัส Smiss 8 หลัก..."

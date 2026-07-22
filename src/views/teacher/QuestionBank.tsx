@@ -364,7 +364,8 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ subjects, teacher, hasApiKe
                         </div>
 
                         {(qSubject && qGrade) ? (
-                            <div className="mb-5 relative animate-fade-in">
+                            <div className="mb-5 relative flex items-center animate-fade-in">
+                                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" size={16}/>
                                 <input 
                                     type="text" 
                                     value={searchQuery}
@@ -372,7 +373,6 @@ const QuestionBank: React.FC<QuestionBankProps> = ({ subjects, teacher, hasApiKe
                                     placeholder={`ค้นหาใน ${qSubject} ${GRADE_LABELS[qGrade]}...`}
                                     className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border-2 border-slate-100 rounded-xl outline-none focus:border-indigo-400 font-bold text-xs"
                                 />
-                                <Search className="absolute left-3.5 top-3 text-slate-300" size={16}/>
                             </div>
                         ) : null}
 

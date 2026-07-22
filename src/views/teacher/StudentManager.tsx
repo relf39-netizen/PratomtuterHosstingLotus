@@ -347,7 +347,7 @@ const StudentManager: React.FC<StudentManagerProps> = ({
                                 placeholder="ค้นหาชื่อ หรือ รหัส..."
                                 className="w-full pl-10 pr-4 py-3 bg-white border-2 border-slate-100 rounded-2xl focus:border-indigo-400 outline-none transition font-bold text-sm shadow-sm"
                             />
-                            <Search className="absolute left-3 top-3.5 text-slate-300" size={18}/>
+                            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" size={18}/>
                         </div>
                         {(canManageAll || isDirector || schoolSettings?.allowAllManageStudents) && (
                             <div className="flex gap-2 bg-white p-1 rounded-2xl shadow-sm border border-slate-100">
@@ -458,7 +458,7 @@ const StudentManager: React.FC<StudentManagerProps> = ({
                                         className="w-full p-4 pl-12 rounded-2xl border-2 border-slate-100 focus:border-indigo-500 outline-none transition font-black text-slate-700 bg-slate-50 focus:bg-white shadow-inner" 
                                         placeholder="เช่น มานะ อดทน" 
                                     />
-                                    <User className="absolute left-4 top-4 text-slate-300" size={20}/>
+                                    <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10" size={20}/>
                                 </div>
                             </div>
 
