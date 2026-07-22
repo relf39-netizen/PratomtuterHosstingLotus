@@ -479,25 +479,29 @@ const Dashboard: React.FC<DashboardProps> = ({
             {onRefreshSubjects && <button onClick={onRefreshSubjects} className="p-2 bg-white rounded-full border border-slate-100 hover:bg-slate-50 text-slate-500 transition active:rotate-180 duration-500"><RefreshCw size={14}/></button>}
         </div>
         {mySubjects.length === 0 ? (
-            <div className="text-center py-12 bg-white rounded-[40px] border-2 border-dashed border-slate-50"><p className="text-slate-500 text-xs font-black italic">ยังไม่มีรายวิชาเรียนนะจ๊ะ 😊</p></div>
+            <div className="text-center py-10 bg-white rounded-3xl border-2 border-dashed border-slate-100"><p className="text-slate-400 text-xs font-black italic">ยังไม่มีรายวิชาเรียนนะจ๊ะ 😊</p></div>
         ) : (
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                 {mySubjects.map(sub => {
                     const avg = getSubjectAverage(sub.name);
                     const theme = SUBJECT_THEMES[sub.name] || { gradient: 'from-slate-500 to-slate-700', slogan: 'เรียนรู้วันนี้ เพื่ออนาคตที่ดีจ้า', icon: <BookOpen size={18}/> };
+                    const gradeLabel = sub.grade ? (GRADE_LABELS[sub.grade] || sub.grade) : 'ทุกชั้น';
                     return (
-                        <button key={sub.id} onClick={() => onSelectSubject?.(sub)} className={`group p-5 rounded-[35px] shadow-sm hover:shadow-xl transition-all duration-300 text-left flex flex-col h-[160px] relative overflow-hidden border-b-[8px] bg-gradient-to-br ${theme.gradient} border-black/20 active:translate-y-1 active:border-b-4`}>
-                            <div className="absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full bg-white/10 group-hover:scale-125 transition-transform duration-500"></div>
-                            <div className="flex justify-between items-start mb-4 relative z-10">
-                                <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-xl bg-white/20 backdrop-blur-md border border-white/30 group-hover:rotate-6 transition-transform">{theme.icon}</div>
+                        <button key={sub.id} onClick={() => onSelectSubject?.(sub)} className={`group p-3.5 sm:p-4 rounded-[24px] shadow-sm hover:shadow-lg transition-all duration-300 text-left flex flex-col h-[150px] relative overflow-hidden border-b-[5px] bg-gradient-to-br ${theme.gradient} border-black/20 active:translate-y-0.5 active:border-b-2`}>
+                            <div className="absolute top-0 right-0 w-20 h-20 -mr-6 -mt-6 rounded-full bg-white/10 group-hover:scale-125 transition-transform duration-500 pointer-events-none"></div>
+                            <div className="flex justify-between items-start mb-2 relative z-10">
+                                <div className="w-8 h-8 rounded-xl flex items-center justify-center text-white shadow-md bg-white/20 backdrop-blur-md border border-white/30 group-hover:rotate-6 transition-transform">{theme.icon}</div>
                                 <div className="text-right">
-                                    <div className="text-2xl font-black text-white leading-none drop-shadow-md">{avg}%</div>
-                                    <div className="text-[7px] font-black text-white/60 uppercase tracking-widest mt-1">Mastery</div>
+                                    <div className="text-lg font-black text-white leading-none drop-shadow-md">{avg}%</div>
+                                    <div className="text-[7px] font-black text-white/70 uppercase tracking-widest mt-0.5">Mastery</div>
                                 </div>
                             </div>
                             <div className="mt-auto relative z-10">
-                                <h4 className="font-black text-sm text-white mb-1 tracking-tight truncate drop-shadow-md">{sub.name}</h4>
-                                <p className="text-[9px] text-white/70 font-bold mb-3 italic line-clamp-1">"{theme.slogan}"</p>
+                                <div className="flex items-center gap-1 mb-1">
+                                    <span className="text-[9px] bg-white/20 px-1.5 py-0.2 rounded text-white font-black">{gradeLabel}</span>
+                                </div>
+                                <h4 className="font-black text-xs sm:text-sm text-white tracking-tight truncate drop-shadow-md mb-0.5">{sub.name}</h4>
+                                <p className="text-[9px] text-white/80 font-bold mb-2 italic truncate">"{theme.slogan}"</p>
                                 <div className="w-full h-1.5 bg-black/20 rounded-full overflow-hidden shadow-inner border border-white/10 p-0.5">
                                     <div className="h-full rounded-full transition-all duration-1000 bg-white" style={{ width: `${avg}%` }}></div>
                                 </div>

@@ -315,40 +315,40 @@ const SubjectManager: React.FC<SubjectManagerProps> = ({ subjects, teacher, canM
                             <p className="text-sm font-bold text-slate-300 mt-2">สร้างวิชาใหม่ได้ที่แผงด้านซ้ายมือครับ</p>
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                             {mySubjects.map(sub => {
                                 const colorConfig = CARD_COLORS.find(c => c.class === sub.color) || CARD_COLORS[0];
                                 const creatorTeacher = teachersList.find(t => String(t.id).trim() === String(sub.teacherId).trim());
                                 const creatorName = creatorTeacher ? creatorTeacher.name : 'ไม่ทราบชื่อครู';
                                 return (
-                                    <div key={sub.id} className={`p-8 rounded-[40px] border-2 shadow-sm transition-all group relative overflow-hidden flex flex-col h-full border-b-[12px] ${sub.color || 'bg-white border-slate-100'} hover:shadow-2xl hover:-translate-y-1.5`}>
-                                        <div className={`absolute top-0 left-0 w-2.5 h-full ${colorConfig.accent} opacity-30`}></div>
+                                    <div key={sub.id} className={`p-5 rounded-[28px] border-2 shadow-sm transition-all group relative overflow-hidden flex flex-col h-full border-b-[6px] ${sub.color || 'bg-white border-slate-100'} hover:shadow-xl hover:-translate-y-1`}>
+                                        <div className={`absolute top-0 left-0 w-2 h-full ${colorConfig.accent} opacity-40`}></div>
                                         
-                                        <div className="flex justify-between items-start mb-6 relative z-10">
-                                            <div className="p-5 bg-white/70 rounded-3xl shadow-sm border border-white/50 backdrop-blur-md">
-                                                {SUBJECT_ICONS.find(i => i.name === sub.icon)?.component || <BookOpen size={24}/>}
+                                        <div className="flex justify-between items-start mb-3 relative z-10">
+                                            <div className="p-3 bg-white/80 rounded-2xl shadow-sm border border-white/60 backdrop-blur-md">
+                                                {SUBJECT_ICONS.find(i => i.name === sub.icon)?.component || <BookOpen size={20}/>}
                                             </div>
                                             <button 
                                                 onClick={async () => { if(confirm('ยืนยันการลบวิชานี้?')) { await deleteSubject(teacher.school, sub.id); onRefresh(); } }} 
-                                                className="p-3 bg-white/40 text-slate-400 hover:text-red-600 hover:bg-white rounded-2xl transition-all shadow-sm opacity-0 group-hover:opacity-100"
+                                                className="p-2 bg-white/60 text-slate-400 hover:text-red-600 hover:bg-white rounded-xl transition-all shadow-sm opacity-0 group-hover:opacity-100"
                                             >
-                                                <Trash2 size={22} />
+                                                <Trash2 size={18} />
                                             </button>
                                         </div>
                                         
-                                        <h5 className="font-black text-xl text-slate-800 truncate mb-1">{sub.name}</h5>
-                                        <p className="text-xs text-slate-500/80 font-black mb-5">ผู้สอน/ผู้สร้าง: {creatorName}</p>
+                                        <h5 className="font-black text-base text-slate-800 truncate mb-0.5">{sub.name}</h5>
+                                        <p className="text-[11px] text-slate-500 font-bold mb-3 truncate">ผู้สอน: {creatorName}</p>
                                         
-                                        <div className="mt-auto bg-white/60 rounded-[30px] p-5 border border-white/60 backdrop-blur-xl">
-                                            <div className="flex items-center justify-between mb-3">
-                                                <div className="text-[11px] text-slate-500 font-black uppercase flex items-center gap-2 tracking-widest">
-                                                    <GraduationCap size={16} className="text-indigo-500"/> ชั้น {GRADE_LABELS[sub.grade] || sub.grade}
+                                        <div className="mt-auto bg-white/70 rounded-2xl p-3 border border-white/80 backdrop-blur-xl">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <div className="text-[11px] text-slate-600 font-black flex items-center gap-1.5">
+                                                    <GraduationCap size={14} className="text-indigo-600"/> ชั้น {GRADE_LABELS[sub.grade] || sub.grade}
                                                 </div>
-                                                <div className="bg-white px-3 py-1 rounded-xl text-[10px] font-black text-indigo-600 border border-indigo-100">
+                                                <div className="bg-white px-2 py-0.5 rounded-lg text-[10px] font-black text-indigo-600 border border-indigo-100">
                                                     {sub.targetClassrooms?.length || 0} ห้อง
                                                 </div>
                                             </div>
-                                            <div className="text-xs font-black text-slate-600 line-clamp-1 leading-relaxed">
+                                            <div className="text-[11px] font-bold text-slate-600 truncate">
                                                 {sub.targetClassrooms && sub.targetClassrooms.length > 0 
                                                     ? `ห้อง: ${sub.targetClassrooms.join(', ')}` 
                                                     : 'เปิดรับนักเรียนทุกห้อง'}

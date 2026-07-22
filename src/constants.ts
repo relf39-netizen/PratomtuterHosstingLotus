@@ -1,5 +1,19 @@
 import { Student, Question, School, Reward } from './types';
 
+export const GRADE_LABELS: Record<string, string> = {
+    'P1': 'ป.1',
+    'P2': 'ป.2',
+    'P3': 'ป.3',
+    'P4': 'ป.4',
+    'P5': 'ป.5',
+    'P6': 'ป.6',
+    'M1': 'ม.1',
+    'M2': 'ม.2',
+    'M3': 'ม.3',
+    'ALL': 'ทุกชั้น',
+    'GRADUATED': 'จบการศึกษา'
+};
+
 // Mock Schools - ปรับเป็นระดับประถมศึกษา
 export const MOCK_SCHOOLS: School[] = [
     { id: 's1', name: 'โรงเรียนประถมสาธิตอัจฉริยะ', schoolCode: '10000001', status: 'active' },
