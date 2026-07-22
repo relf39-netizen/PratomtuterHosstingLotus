@@ -108,39 +108,41 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick, initialLogo
                         <span className="text-sm font-bold text-slate-500">{foundStudent.name}</span>
                     </div>
                 ) : (
-                    <form onSubmit={handleLogin} className="space-y-4">
+                    <form onSubmit={handleLogin} className="space-y-5">
                         <div>
-                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">ชื่อผู้ใช้งาน (User ID / Username)</label>
+                            <label className="block text-xs md:text-sm font-black text-slate-800 uppercase tracking-wider mb-2 ml-1">ชื่อผู้ใช้งาน (User ID / Username)</label>
                             <div className="relative">
                                 <input 
                                     type="text"
                                     value={username}
                                     onChange={e => setUsername(e.target.value)}
-                                    className="w-full p-4 pl-12 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-orange-400 focus:bg-white transition-all font-black text-slate-700"
+                                    className={`w-full p-4 pl-12 bg-white border-2 rounded-2xl outline-none font-bold text-slate-900 transition-all ${error ? 'is-error border-rose-500 bg-rose-50/50' : 'border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-100'}`}
                                     placeholder="รหัสประจำตัว หรือ Username"
+                                    aria-invalid={!!error}
                                 />
-                                <User className="absolute left-4 top-4 text-slate-300" size={20}/>
+                                <User className="absolute left-4 top-4.5 text-slate-500" size={20}/>
                             </div>
                         </div>
 
                         <div>
-                            <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">รหัสผ่าน (Password)</label>
+                            <label className="block text-xs md:text-sm font-black text-slate-800 uppercase tracking-wider mb-2 ml-1">รหัสผ่าน (Password)</label>
                             <div className="relative">
                                 <input 
                                     type="password"
                                     value={password}
                                     onChange={e => setPassword(e.target.value)}
-                                    className="w-full p-4 pl-12 bg-slate-50 border-2 border-slate-100 rounded-2xl outline-none focus:border-orange-400 focus:bg-white transition-all font-black text-slate-700"
+                                    className={`w-full p-4 pl-12 bg-white border-2 rounded-2xl outline-none font-bold text-slate-900 transition-all ${error ? 'is-error border-rose-500 bg-rose-50/50' : 'border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-100'}`}
                                     placeholder="กรอกรหัสผ่าน..."
+                                    aria-invalid={!!error}
                                 />
-                                <ShieldAlert className="absolute left-4 top-4 text-slate-300" size={20}/>
+                                <ShieldAlert className="absolute left-4 top-4.5 text-slate-500" size={20}/>
                             </div>
-                            <p className="text-[9px] text-slate-400 font-bold mt-1 ml-1">* หากยังไม่มีรหัสผ่าน ให้เว้นว่างไว้แล้วใส่รหัสประจำตัวช่องด้านบน</p>
+                            <p className="text-xs text-slate-600 font-bold mt-1.5 ml-1">* หากยังไม่มีรหัสผ่าน ให้เว้นว่างไว้แล้วใส่รหัสประจำตัวช่องด้านบน</p>
                         </div>
 
                         {error && (
-                            <div className="bg-rose-50 text-rose-700 p-3 rounded-2xl text-[11px] font-black flex items-center gap-2 animate-shake border border-rose-100">
-                                <AlertCircle size={16}/> {error}
+                            <div className="bg-rose-50 text-rose-800 p-4 rounded-2xl text-xs md:text-sm font-black flex items-center gap-2.5 animate-shake border-2 border-rose-400 shadow-sm">
+                                <AlertCircle size={18} className="text-rose-600 shrink-0"/> {error}
                             </div>
                         )}
 

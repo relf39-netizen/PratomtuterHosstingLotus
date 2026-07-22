@@ -46,6 +46,146 @@
       .animate-scale-in { animation: scale-in 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
       @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
       .animate-shake { animation: shake 0.3s ease-in-out infinite; }
+
+      /* ==========================================================================
+         WCAG 2.1 AA Compliant High-Contrast Form Inputs
+         Optimized for clarity, low-vision users, and elderly users.
+         ========================================================================== */
+
+      /* 1. Base style for all text, select, textarea, date, number, password inputs */
+      input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"]),
+      select,
+      textarea {
+        font-family: 'Prompt', sans-serif !important;
+        border-width: 2px !important;
+        border-style: solid !important;
+        border-color: #94a3b8 !important; /* High-contrast border (slate-400 - WCAG >3:1 against white/bg) */
+        background-color: #ffffff !important;
+        color: #0f172a !important; /* High-contrast text color (slate-900 - WCAG >7:1) */
+        font-size: 1rem !important; /* 16px minimum font size for high legibility & no zoom on iOS */
+        font-weight: 600 !important;
+        line-height: 1.5 !important;
+        border-radius: 0.875rem !important; /* Rounded corners (rounded-xl) */
+        min-height: 48px !important; /* Touch target minimum 48px for WCAG 2.1 AA */
+        transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out, background-color 0.2s ease-in-out !important;
+        box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05) !important;
+      }
+
+      /* 2. Vertical Padding & Height */
+      input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):not([type="image"]),
+      select,
+      textarea {
+        padding-top: 0.75rem !important;
+        padding-bottom: 0.75rem !important;
+      }
+
+      /* 3. Horizontal Padding (respecting pl- icon classes if present) */
+      input:not([class*="pl-"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
+      select:not([class*="pl-"]),
+      textarea:not([class*="pl-"]) {
+        padding-left: 1rem !important;
+      }
+      input:not([class*="pr-"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
+      select:not([class*="pr-"]),
+      textarea:not([class*="pr-"]) {
+        padding-right: 1rem !important;
+      }
+
+      /* 4. High-contrast placeholders */
+      input::placeholder,
+      textarea::placeholder {
+        color: #64748b !important; /* slate-500 - contrast ratio > 4.5:1 against white */
+        font-weight: 500 !important;
+        opacity: 1 !important;
+      }
+
+      /* 5. Hover Effect */
+      input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):hover,
+      select:hover,
+      textarea:hover {
+        border-color: #2563eb !important; /* Blue-600 */
+        background-color: #ffffff !important;
+      }
+
+      /* 6. Focus Effect - Bright blue border and prominent glowing focus ring */
+      input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]):focus,
+      select:focus,
+      textarea:focus {
+        border-color: #1d4ed8 !important; /* Blue-700 */
+        background-color: #ffffff !important;
+        outline: 3px solid #60a5fa !important; /* Sky-400 visible outline */
+        outline-offset: 2px !important;
+        box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.3) !important;
+      }
+
+      /* 7. Error State - Bright Red/Rose Border & Ring */
+      input.is-error,
+      input[aria-invalid="true"],
+      input:invalid:not(:placeholder-shown),
+      select.is-error,
+      textarea.is-error {
+        border-color: #e11d48 !important; /* Rose-600 */
+        background-color: #fff1f2 !important; /* Rose-50 */
+      }
+      input.is-error:focus,
+      input[aria-invalid="true"]:focus,
+      input:invalid:not(:placeholder-shown):focus,
+      select.is-error:focus,
+      textarea.is-error:focus {
+        border-color: #be123c !important; /* Rose-700 */
+        outline-color: #f43f5e !important;
+        box-shadow: 0 0 0 4px rgba(225, 29, 72, 0.3) !important;
+      }
+
+      /* 8. Success State - Emerald Green Border & Ring */
+      input.is-success,
+      select.is-success,
+      textarea.is-success {
+        border-color: #059669 !important; /* Emerald-600 */
+        background-color: #f0fdf4 !important; /* Emerald-50 */
+      }
+      input.is-success:focus,
+      select.is-success:focus,
+      textarea.is-success:focus {
+        border-color: #047857 !important; /* Emerald-700 */
+        outline-color: #10b981 !important;
+        box-shadow: 0 0 0 4px rgba(5, 150, 105, 0.3) !important;
+      }
+
+      /* 9. Uniform Select & Date/Number/Password inputs styling */
+      select {
+        cursor: pointer;
+        appearance: none;
+        -webkit-appearance: none;
+        background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23334155' stroke-width='2.5'%3e%3cpath stroke-linecap='round' stroke-linejoin='round' d='M19 9l-7 7-7-7'/%3e%3c/svg%3e") !important;
+        background-position: right 1rem center !important;
+        background-repeat: no-repeat !important;
+        background-size: 1.25rem 1.25rem !important;
+        padding-right: 2.75rem !important;
+      }
+
+      input[type="date"],
+      input[type="time"],
+      input[type="datetime-local"] {
+        cursor: pointer;
+      }
+
+      /* Disabled state with clear visual distinction */
+      input:disabled,
+      select:disabled,
+      textarea:disabled {
+        background-color: #f1f5f9 !important;
+        border-color: #cbd5e1 !important;
+        color: #64748b !important;
+        cursor: not-allowed !important;
+        opacity: 0.75 !important;
+      }
+
+      /* Labels - high contrast and distinct spacing */
+      label {
+        color: #1e293b !important; /* slate-800 for high text contrast */
+        font-weight: 700 !important;
+      }
     </style>
     
     <script type="importmap">

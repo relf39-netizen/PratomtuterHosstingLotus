@@ -339,21 +339,21 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack, ini
 
         <form onSubmit={handleLogin} className="space-y-6">
           <div>
-            <label className="block text-xs font-black text-slate-900 mb-2.5 ml-1 uppercase tracking-[0.2em]">เลขประจำตัวประชาชน (Username)</label>
+            <label className="block text-xs md:text-sm font-black text-slate-900 mb-2.5 ml-1 uppercase tracking-wider">เลขประจำตัวประชาชน (Username)</label>
             <div className="relative">
-                <input type="text" value={username} onChange={e => setUsername(e.target.value)} className="w-full p-5 pl-14 border-4 border-slate-100 rounded-[1.5rem] focus:border-indigo-600 bg-slate-50 focus:bg-white outline-none transition font-black text-slate-950 text-lg shadow-inner" placeholder="13 หลัก" required />
-                <User className="absolute left-5 top-5 text-slate-500" size={24} />
+                <input type="text" value={username} onChange={e => setUsername(e.target.value)} className={`w-full p-5 pl-14 border-2 rounded-[1.5rem] bg-white outline-none transition font-bold text-slate-950 text-lg shadow-sm ${error ? 'is-error border-rose-500 bg-rose-50/50' : 'border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-100'}`} placeholder="13 หลัก" required aria-invalid={!!error} />
+                <User className="absolute left-5 top-5 text-slate-600" size={24} />
             </div>
           </div>
           <div>
-            <label className="block text-xs font-black text-slate-900 mb-2.5 ml-1 uppercase tracking-[0.2em]">รหัสผ่าน (Password)</label>
+            <label className="block text-xs md:text-sm font-black text-slate-900 mb-2.5 ml-1 uppercase tracking-wider">รหัสผ่าน (Password)</label>
             <div className="relative">
-              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className="w-full p-5 pl-14 border-4 border-slate-100 rounded-[1.5rem] focus:border-indigo-600 bg-slate-50 focus:bg-white outline-none transition font-black text-slate-950 text-lg shadow-inner" placeholder="••••••" required />
-              <Lock className="absolute left-5 top-5 text-slate-500" size={24} />
+              <input type="password" value={password} onChange={e => setPassword(e.target.value)} className={`w-full p-5 pl-14 border-2 rounded-[1.5rem] bg-white outline-none transition font-bold text-slate-950 text-lg shadow-sm ${error ? 'is-error border-rose-500 bg-rose-50/50' : 'border-slate-300 focus:border-blue-600 focus:ring-4 focus:ring-blue-100'}`} placeholder="••••••" required aria-invalid={!!error} />
+              <Lock className="absolute left-5 top-5 text-slate-600" size={24} />
             </div>
           </div>
 
-          {error && <div className="text-red-700 text-xs font-black bg-red-50 p-5 rounded-2xl border-2 border-red-200 flex items-center gap-3 animate-shake shadow-sm"><AlertCircle size={20}/> {error}</div>}
+          {error && <div className="text-rose-900 text-xs md:text-sm font-black bg-rose-50 p-5 rounded-2xl border-2 border-rose-400 flex items-center gap-3 animate-shake shadow-sm"><AlertCircle size={22} className="text-rose-600 shrink-0"/> {error}</div>}
 
           <button type="submit" disabled={loading} className="w-full py-5 rounded-[1.8rem] font-black text-2xl text-white shadow-2xl transition-all transform active:scale-95 bg-gradient-to-br from-indigo-600 to-violet-700 hover:shadow-indigo-300 disabled:opacity-50 border-b-8 border-indigo-900">
             {loading ? 'กำลังตรวจสอบ...' : 'ลงชื่อเข้าใช้'}
