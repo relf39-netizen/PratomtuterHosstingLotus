@@ -404,6 +404,8 @@ app.post('/api', async (req, res) => {
 
         case 'deleteAssignment': {
           const { id } = args;
+          await query('DELETE FROM questions WHERE assignment_id = ?', [id]);
+          await query('DELETE FROM exam_results WHERE assignment_id = ?', [id]);
           await query('DELETE FROM assignments WHERE id = ?', [id]);
           return res.json({ success: true });
         }
@@ -490,7 +492,34 @@ app.post('/api', async (req, res) => {
 
         case 'deleteSubject': {
           const { school, id } = args;
-          await query('DELETE FROM subjects WHERE id = ? AND school = ?', [id, school]);
+          const cleanSchool = String(school || '').trim();
+          
+          try {
+            const subRows = await query('SELECT * FROM subjects WHERE id = ? AND school = ?', [id, cleanSchool]);
+            if (subRows && subRows.length > 0) {
+              const subName = String(subRows[0].name || '').trim();
+              if (subName) {
+                // Find all assignment IDs for this subject
+                const asgRows = await query('SELECT id FROM assignments WHERE school = ? AND (subject = ? OR LOWER(subject) = LOWER(?))', [cleanSchool, subName, subName]);
+                const asgIds = (asgRows || []).map((a: any) => a.id).filter(Boolean);
+
+                if (asgIds.length > 0) {
+                  const placeholders = asgIds.map(() => '?').join(',');
+                  await query(`DELETE FROM questions WHERE (school = ? AND (subject = ? OR LOWER(subject) = LOWER(?))) OR assignment_id IN (${placeholders})`, [cleanSchool, subName, subName, ...asgIds]);
+                  await query(`DELETE FROM exam_results WHERE (school = ? AND (subject = ? OR LOWER(subject) = LOWER(?))) OR assignment_id IN (${placeholders})`, [cleanSchool, subName, subName, ...asgIds]);
+                } else {
+                  await query('DELETE FROM questions WHERE school = ? AND (subject = ? OR LOWER(subject) = LOWER(?))', [cleanSchool, subName, subName]);
+                  await query('DELETE FROM exam_results WHERE (school = ? OR student_id IN (SELECT id FROM students WHERE school = ?)) AND (subject = ? OR LOWER(subject) = LOWER(?))', [cleanSchool, cleanSchool, subName, subName]);
+                }
+
+                await query('DELETE FROM assignments WHERE school = ? AND (subject = ? OR LOWER(subject) = LOWER(?))', [cleanSchool, subName, subName]);
+              }
+            }
+          } catch (err) {
+            console.error('Error during cascade delete for subject:', err);
+          }
+
+          await query('DELETE FROM subjects WHERE id = ? AND school = ?', [id, cleanSchool]);
           return res.json({ success: true });
         }
 
@@ -702,6 +731,331 @@ app.post('/api', async (req, res) => {
           const results = await query('SELECT * FROM exam_results');
           const teachers = await query('SELECT * FROM teachers');
           return res.json({ students, results, teachers });
+        }
+
+        case 'cleanupOrphanedSubjects': {
+          try {
+            // 1. Get all valid subjects from `subjects` table
+            const allSubjects = await query('SELECT * FROM subjects');
+            const validSubjectKeys = new Set<string>();
+            const validSubjectNamesGlobally = new Set<string>();
+
+            (allSubjects || []).forEach((s: any) => {
+              const sch = String(s.school || '').trim().toLowerCase();
+              const nm = String(s.name || '').trim().toLowerCase();
+              if (nm) {
+                validSubjectNamesGlobally.add(nm);
+                if (sch) validSubjectKeys.add(`${sch}::${nm}`);
+              }
+            });
+
+            // 2. Fetch all assignments
+            const allAssignments = await query('SELECT id, school, subject FROM assignments');
+            const orphanedAsgIds: string[] = [];
+
+            (allAssignments || []).forEach((a: any) => {
+              const sch = String(a.school || '').trim().toLowerCase();
+              const sub = String(a.subject || '').trim().toLowerCase();
+              if (sub && !sub.startsWith('o-net') && !sub.startsWith('onet') && !sub.startsWith('nt')) {
+                const key = `${sch}::${sub}`;
+                const isValid = validSubjectKeys.has(key) || (validSubjectNamesGlobally.has(sub) && !sch);
+                if (!isValid) {
+                  orphanedAsgIds.push(String(a.id));
+                }
+              }
+            });
+
+            let deletedAssignmentsCount = 0;
+            if (orphanedAsgIds.length > 0) {
+              const placeholders = orphanedAsgIds.map(() => '?').join(',');
+              await query(`DELETE FROM assignments WHERE id IN (${placeholders})`, orphanedAsgIds);
+              deletedAssignmentsCount = orphanedAsgIds.length;
+            }
+
+            // 3. Fetch all questions
+            const allQuestions = await query('SELECT id, school, subject, assignment_id FROM questions');
+            const orphanedQuestionIds: string[] = [];
+
+            (allQuestions || []).forEach((q: any) => {
+              const sch = String(q.school || '').trim().toLowerCase();
+              const sub = String(q.subject || '').trim().toLowerCase();
+              const asgId = String(q.assignment_id || '');
+
+              if (asgId && orphanedAsgIds.includes(asgId)) {
+                orphanedQuestionIds.push(String(q.id));
+              } else if (sub && !sub.startsWith('o-net') && !sub.startsWith('onet') && !sub.startsWith('nt')) {
+                const key = `${sch}::${sub}`;
+                const isValid = validSubjectKeys.has(key) || (validSubjectNamesGlobally.has(sub) && !sch);
+                if (!isValid) {
+                  orphanedQuestionIds.push(String(q.id));
+                }
+              }
+            });
+
+            let deletedQuestionsCount = 0;
+            if (orphanedQuestionIds.length > 0) {
+              const placeholders = orphanedQuestionIds.map(() => '?').join(',');
+              await query(`DELETE FROM questions WHERE id IN (${placeholders})`, orphanedQuestionIds);
+              deletedQuestionsCount = orphanedQuestionIds.length;
+            }
+
+            // 4. Fetch exam_results
+            const allResults = await query('SELECT id, school, subject, assignment_id FROM exam_results');
+            const orphanedResultIds: string[] = [];
+
+            (allResults || []).forEach((r: any) => {
+              const sch = String(r.school || '').trim().toLowerCase();
+              const sub = String(r.subject || '').trim().toLowerCase();
+              const asgId = String(r.assignment_id || r.assignmentId || '');
+
+              if (asgId && orphanedAsgIds.includes(asgId)) {
+                orphanedResultIds.push(String(r.id));
+              } else if (sub && !sub.startsWith('o-net') && !sub.startsWith('onet') && !sub.startsWith('nt')) {
+                const key = `${sch}::${sub}`;
+                const isValid = validSubjectKeys.has(key) || (validSubjectNamesGlobally.has(sub) && !sch);
+                if (!isValid) {
+                  orphanedResultIds.push(String(r.id));
+                }
+              }
+            });
+
+            let deletedResultsCount = 0;
+            if (orphanedResultIds.length > 0) {
+              const placeholders = orphanedResultIds.map(() => '?').join(',');
+              await query(`DELETE FROM exam_results WHERE id IN (${placeholders})`, orphanedResultIds);
+              deletedResultsCount = orphanedResultIds.length;
+            }
+
+            return res.json({
+              success: true,
+              deletedAssignmentsCount,
+              deletedQuestionsCount,
+              deletedResultsCount,
+              message: `ลบชุดแบบทดสอบตกค้าง ${deletedAssignmentsCount} รายการ, ข้อสอบ ${deletedQuestionsCount} ข้อ, ประวัติการสอบ ${deletedResultsCount} รายการเรียบร้อยแล้ว`
+            });
+          } catch (err: any) {
+            console.error('Error in cleanupOrphanedSubjects:', err);
+            return res.status(500).json({ success: false, message: err.message });
+          }
+        }
+
+        case 'repairDatabaseStructure': {
+          try {
+            const details: string[] = [];
+            let subjectsFixed = 0;
+            let assignmentsLinked = 0;
+            let questionsLinked = 0;
+            let resultsLinked = 0;
+            let orphansCleaned = 0;
+
+            const safeAddColumn = async (table: string, column: string, colDef: string) => {
+              try {
+                await query(`ALTER TABLE ${table} ADD COLUMN ${column} ${colDef}`);
+                details.push(`เพิ่มคอลัมน์ ${column} ในตาราง ${table} สำเร็จ`);
+              } catch (err: any) {
+                // Ignore if column exists
+              }
+            };
+
+            await safeAddColumn('subjects', 'teacher_id', 'VARCHAR(255)');
+            await safeAddColumn('assignments', 'subject_id', 'VARCHAR(255)');
+            await safeAddColumn('assignments', 'teacher_id', 'VARCHAR(255)');
+            await safeAddColumn('questions', 'subject_id', 'VARCHAR(255)');
+            await safeAddColumn('questions', 'teacher_id', 'VARCHAR(255)');
+            await safeAddColumn('exam_results', 'subject_id', 'VARCHAR(255)');
+
+            const allTeachers = await query('SELECT * FROM teachers');
+            const allSubjects = await query('SELECT * FROM subjects');
+            const allAssignments = await query('SELECT * FROM assignments');
+            const allQuestions = await query('SELECT * FROM questions');
+            const allResults = await query('SELECT * FROM exam_results');
+
+            const teacherById = new Map<string, any>();
+            const teachersBySchool = new Map<string, any[]>();
+            (allTeachers || []).forEach((t: any) => {
+              const tid = String(t.id);
+              teacherById.set(tid, t);
+              const sch = String(t.school || '').trim().toLowerCase();
+              if (!teachersBySchool.has(sch)) teachersBySchool.set(sch, []);
+              teachersBySchool.get(sch)!.push(t);
+            });
+
+            const subjectByKey = new Map<string, any>();
+            const subjectById = new Map<string, any>();
+
+            for (const sub of (allSubjects || [])) {
+              const sch = String(sub.school || '').trim().toLowerCase();
+              const nm = String(sub.name || '').trim().toLowerCase();
+              const sid = String(sub.id);
+              subjectById.set(sid, sub);
+
+              if (sch && nm) subjectByKey.set(`${sch}::${nm}`, sub);
+              if (nm && !subjectByKey.has(`global::${nm}`)) subjectByKey.set(`global::${nm}`, sub);
+
+              if (!sub.teacher_id || !teacherById.has(String(sub.teacher_id))) {
+                const schoolTeachers = teachersBySchool.get(sch) || [];
+                const matchedTeacher = schoolTeachers.find((t: any) => t.role === 'SCHOOL_ADMIN' || t.role === 'SUPER_ADMIN') || schoolTeachers[0];
+                if (matchedTeacher) {
+                  await query('UPDATE subjects SET teacher_id = ? WHERE id = ?', [matchedTeacher.id, sub.id]);
+                  sub.teacher_id = matchedTeacher.id;
+                  subjectsFixed++;
+                }
+              }
+            }
+
+            if (subjectsFixed > 0) {
+              details.push(`ปรับปรุง ID ครูประจำวิชาในตารางรายวิชาสำเร็จ ${subjectsFixed} รายการ`);
+            }
+
+            const assignmentById = new Map<string, any>();
+            for (const asg of (allAssignments || [])) {
+              const aid = String(asg.id);
+              assignmentById.set(aid, asg);
+
+              const sch = String(asg.school || '').trim().toLowerCase();
+              const subName = String(asg.subject || '').trim().toLowerCase();
+              let updated = false;
+
+              if (!asg.subject_id || !subjectById.has(String(asg.subject_id))) {
+                const matchedSubject = subjectByKey.get(`${sch}::${subName}`) || subjectByKey.get(`global::${subName}`);
+                if (matchedSubject) {
+                  asg.subject_id = matchedSubject.id;
+                  updated = true;
+                }
+              }
+
+              if (!asg.teacher_id) {
+                const creator = String(asg.created_by || '').trim();
+                const schoolTeachers = teachersBySchool.get(sch) || [];
+                const matchedTeacher = schoolTeachers.find((t: any) => t.name === creator || t.username === creator) || schoolTeachers[0];
+                if (matchedTeacher) {
+                  asg.teacher_id = matchedTeacher.id;
+                  updated = true;
+                }
+              }
+
+              if (updated) {
+                await query('UPDATE assignments SET subject_id = ?, teacher_id = ? WHERE id = ?', [
+                  asg.subject_id || null,
+                  asg.teacher_id || null,
+                  asg.id
+                ]);
+                assignmentsLinked++;
+              }
+            }
+
+            if (assignmentsLinked > 0) {
+              details.push(`เชื่อมโยง subject_id และ teacher_id ให้กับชุดแบบทดสอบสำเร็จ ${assignmentsLinked} รายการ`);
+            }
+
+            for (const q of (allQuestions || [])) {
+              const qAsgId = String(q.assignment_id || q.assignmentId || '');
+              const sch = String(q.school || '').trim().toLowerCase();
+              const subName = String(q.subject || '').trim().toLowerCase();
+              let updated = false;
+
+              let targetAsg = qAsgId ? assignmentById.get(qAsgId) : null;
+              if (targetAsg) {
+                if (q.subject_id !== targetAsg.subject_id) {
+                  q.subject_id = targetAsg.subject_id;
+                  updated = true;
+                }
+                if (q.teacher_id !== targetAsg.teacher_id) {
+                  q.teacher_id = targetAsg.teacher_id;
+                  updated = true;
+                }
+                if (!q.school && targetAsg.school) {
+                  q.school = targetAsg.school;
+                  updated = true;
+                }
+              } else {
+                const matchedSubject = subjectByKey.get(`${sch}::${subName}`) || subjectByKey.get(`global::${subName}`);
+                if (matchedSubject) {
+                  if (q.subject_id !== matchedSubject.id) {
+                    q.subject_id = matchedSubject.id;
+                    updated = true;
+                  }
+                  if (!q.teacher_id && matchedSubject.teacher_id) {
+                    q.teacher_id = matchedSubject.teacher_id;
+                    updated = true;
+                  }
+                }
+              }
+
+              if (updated) {
+                await query('UPDATE questions SET subject_id = ?, teacher_id = ?, school = ? WHERE id = ?', [
+                  q.subject_id || null,
+                  q.teacher_id || null,
+                  q.school || null,
+                  q.id
+                ]);
+                questionsLinked++;
+              }
+            }
+
+            if (questionsLinked > 0) {
+              details.push(`ซิงค์โครงสร้างคลังข้อสอบให้ตรงกับวิชาและแบบทดสอบ ${questionsLinked} ข้อ`);
+            }
+
+            for (const r of (allResults || [])) {
+              const rAsgId = String(r.assignment_id || r.assignmentId || '');
+              const sch = String(r.school || '').trim().toLowerCase();
+              const subName = String(r.subject || '').trim().toLowerCase();
+              let updated = false;
+
+              let targetAsg = rAsgId ? assignmentById.get(rAsgId) : null;
+              if (targetAsg) {
+                if (r.subject_id !== targetAsg.subject_id) {
+                  r.subject_id = targetAsg.subject_id;
+                  updated = true;
+                }
+                if (!r.school && targetAsg.school) {
+                  r.school = targetAsg.school;
+                  updated = true;
+                }
+              } else {
+                const matchedSubject = subjectByKey.get(`${sch}::${subName}`) || subjectByKey.get(`global::${subName}`);
+                if (matchedSubject) {
+                  if (r.subject_id !== matchedSubject.id) {
+                    r.subject_id = matchedSubject.id;
+                    updated = true;
+                  }
+                }
+              }
+
+              if (updated) {
+                await query('UPDATE exam_results SET subject_id = ?, school = ? WHERE id = ?', [
+                  r.subject_id || null,
+                  r.school || null,
+                  r.id
+                ]);
+                resultsLinked++;
+              }
+            }
+
+            if (resultsLinked > 0) {
+              details.push(`ปรับโครงสร้างข้อมูลผลการสอบและเชื่อมโยง ID รายวิชาสำเร็จ ${resultsLinked} รายการ`);
+            }
+
+            if (details.length === 0) {
+              details.push('โครงสร้างฐานข้อมูลถูกต้องสมบูรณ์แล้ว ไม่พบการเชื่อมโยง ID ที่ผิดปกติ');
+            }
+
+            return res.json({
+              success: true,
+              report: {
+                subjectsFixed,
+                assignmentsLinked,
+                questionsLinked,
+                resultsLinked,
+                orphansCleaned,
+                details
+              }
+            });
+          } catch (err: any) {
+            console.error('Error repairing database structure:', err);
+            return res.status(500).json({ success: false, message: err.message });
+          }
         }
 
         case 'importFromSupabase': {
@@ -1106,7 +1460,10 @@ app.post('/api', async (req, res) => {
 
       case 'deleteAssignment': {
         const { id } = args;
-        db.assignments = db.assignments.filter((a: any) => String(a.id) !== String(id));
+        const targetId = String(id);
+        db.questions = (db.questions || []).filter((q: any) => String(q.assignment_id || q.assignmentId || '') !== targetId);
+        db.exam_results = (db.exam_results || []).filter((r: any) => String(r.assignmentId || r.assignment_id || '') !== targetId);
+        db.assignments = (db.assignments || []).filter((a: any) => String(a.id) !== targetId);
         saveJsonDb(db);
         return res.json({ success: true });
       }
@@ -1205,7 +1562,66 @@ app.post('/api', async (req, res) => {
 
       case 'deleteSubject': {
         const { school, id } = args;
-        db.subjects = db.subjects.filter((s: any) => !(String(s.id) === String(id) && String(s.school).trim().toLowerCase() === String(school).trim().toLowerCase()));
+        const cleanSchool = String(school || '').trim().toLowerCase();
+        
+        const targetSub = (db.subjects || []).find((s: any) => String(s.id) === String(id) && String(s.school || '').trim().toLowerCase() === cleanSchool);
+        const subName = targetSub ? String(targetSub.name || '').trim().toLowerCase() : '';
+
+        // 1. Delete from db.subjects
+        db.subjects = (db.subjects || []).filter((s: any) => {
+          const sSchool = String(s.school || '').trim().toLowerCase();
+          const sId = String(s.id);
+          const sName = String(s.name || '').trim().toLowerCase();
+          if (sSchool === cleanSchool) {
+            if (sId === String(id) || (subName && sName === subName)) {
+              return false;
+            }
+          }
+          return true;
+        });
+
+        if (subName) {
+          // 2. Delete linked assignments and collect their IDs
+          const deletedAssignmentIds = new Set<string>();
+          db.assignments = (db.assignments || []).filter((a: any) => {
+            const aSchool = String(a.school || '').trim().toLowerCase();
+            const aSub = String(a.subject || '').trim().toLowerCase();
+            if (aSchool === cleanSchool && (aSub === subName || aSub.includes(subName) || subName.includes(aSub))) {
+              if (a.id) deletedAssignmentIds.add(String(a.id));
+              return false;
+            }
+            return true;
+          });
+
+          // 3. Delete linked questions
+          db.questions = (db.questions || []).filter((q: any) => {
+            const qSchool = String(q.school || '').trim().toLowerCase();
+            const qSub = String(q.subject || '').trim().toLowerCase();
+            const qAsgId = String(q.assignment_id || q.assignmentId || '');
+            if (qSchool === cleanSchool && (qSub === subName || qSub.includes(subName) || subName.includes(qSub))) {
+              return false;
+            }
+            if (deletedAssignmentIds.has(qAsgId)) {
+              return false;
+            }
+            return true;
+          });
+
+          // 4. Delete linked exam_results
+          db.exam_results = (db.exam_results || []).filter((r: any) => {
+            const rSchool = String(r.school || '').trim().toLowerCase();
+            const rSub = String(r.subject || '').trim().toLowerCase();
+            const rAsgId = String(r.assignmentId || r.assignment_id || '');
+            if ((rSchool === cleanSchool || !rSchool) && (rSub === subName || rSub.includes(subName) || subName.includes(rSub))) {
+              return false;
+            }
+            if (deletedAssignmentIds.has(rAsgId)) {
+              return false;
+            }
+            return true;
+          });
+        }
+
         saveJsonDb(db);
         return res.json({ success: true });
       }
@@ -1477,6 +1893,265 @@ app.post('/api', async (req, res) => {
           results: db.exam_results,
           teachers: db.teachers
         });
+      }
+
+      case 'cleanupOrphanedSubjects': {
+        try {
+          const validSubjectKeys = new Set<string>();
+          const validSubjectNamesGlobally = new Set<string>();
+
+          (db.subjects || []).forEach((s: any) => {
+            const sch = String(s.school || '').trim().toLowerCase();
+            const nm = String(s.name || '').trim().toLowerCase();
+            if (nm) {
+              validSubjectNamesGlobally.add(nm);
+              if (sch) validSubjectKeys.add(`${sch}::${nm}`);
+            }
+          });
+
+          const orphanedAsgIds: string[] = [];
+          db.assignments = (db.assignments || []).filter((a: any) => {
+            const sch = String(a.school || '').trim().toLowerCase();
+            const sub = String(a.subject || '').trim().toLowerCase();
+            if (sub && !sub.startsWith('o-net') && !sub.startsWith('onet') && !sub.startsWith('nt')) {
+              const key = `${sch}::${sub}`;
+              const isValid = validSubjectKeys.has(key) || (validSubjectNamesGlobally.has(sub) && !sch);
+              if (!isValid) {
+                if (a.id) orphanedAsgIds.push(String(a.id));
+                return false;
+              }
+            }
+            return true;
+          });
+
+          let deletedQuestionsCount = 0;
+          db.questions = (db.questions || []).filter((q: any) => {
+            const sch = String(q.school || '').trim().toLowerCase();
+            const sub = String(q.subject || '').trim().toLowerCase();
+            const asgId = String(q.assignment_id || q.assignmentId || '');
+
+            if (asgId && orphanedAsgIds.includes(asgId)) {
+              deletedQuestionsCount++;
+              return false;
+            }
+            if (sub && !sub.startsWith('o-net') && !sub.startsWith('onet') && !sub.startsWith('nt')) {
+              const key = `${sch}::${sub}`;
+              const isValid = validSubjectKeys.has(key) || (validSubjectNamesGlobally.has(sub) && !sch);
+              if (!isValid) {
+                deletedQuestionsCount++;
+                return false;
+              }
+            }
+            return true;
+          });
+
+          let deletedResultsCount = 0;
+          db.exam_results = (db.exam_results || []).filter((r: any) => {
+            const sch = String(r.school || '').trim().toLowerCase();
+            const sub = String(r.subject || '').trim().toLowerCase();
+            const asgId = String(r.assignmentId || r.assignment_id || '');
+
+            if (asgId && orphanedAsgIds.includes(asgId)) {
+              deletedResultsCount++;
+              return false;
+            }
+            if (sub && !sub.startsWith('o-net') && !sub.startsWith('onet') && !sub.startsWith('nt')) {
+              const key = `${sch}::${sub}`;
+              const isValid = validSubjectKeys.has(key) || (validSubjectNamesGlobally.has(sub) && !sch);
+              if (!isValid) {
+                deletedResultsCount++;
+                return false;
+              }
+            }
+            return true;
+          });
+
+          saveJsonDb(db);
+
+          return res.json({
+            success: true,
+            deletedAssignmentsCount: orphanedAsgIds.length,
+            deletedQuestionsCount,
+            deletedResultsCount,
+            message: `ลบชุดแบบทดสอบตกค้าง ${orphanedAsgIds.length} รายการ, ข้อสอบ ${deletedQuestionsCount} ข้อ, ประวัติการสอบ ${deletedResultsCount} รายการเรียบร้อยแล้ว`
+          });
+        } catch (err: any) {
+          return res.status(500).json({ success: false, message: err.message });
+        }
+      }
+
+      case 'repairDatabaseStructure': {
+        try {
+          const details: string[] = [];
+          let subjectsFixed = 0;
+          let assignmentsLinked = 0;
+          let questionsLinked = 0;
+          let resultsLinked = 0;
+
+          const teacherById = new Map<string, any>();
+          const teachersBySchool = new Map<string, any[]>();
+          (db.teachers || []).forEach((t: any) => {
+            const tid = String(t.id);
+            teacherById.set(tid, t);
+            const sch = String(t.school || '').trim().toLowerCase();
+            if (!teachersBySchool.has(sch)) teachersBySchool.set(sch, []);
+            teachersBySchool.get(sch)!.push(t);
+          });
+
+          const subjectByKey = new Map<string, any>();
+          const subjectById = new Map<string, any>();
+
+          (db.subjects || []).forEach((sub: any) => {
+            const sch = String(sub.school || '').trim().toLowerCase();
+            const nm = String(sub.name || '').trim().toLowerCase();
+            const sid = String(sub.id);
+            subjectById.set(sid, sub);
+
+            if (sch && nm) subjectByKey.set(`${sch}::${nm}`, sub);
+            if (nm && !subjectByKey.has(`global::${nm}`)) subjectByKey.set(`global::${nm}`, sub);
+
+            if (!sub.teacher_id || !teacherById.has(String(sub.teacher_id))) {
+              const schoolTeachers = teachersBySchool.get(sch) || [];
+              const matchedTeacher = schoolTeachers.find((t: any) => t.role === 'SCHOOL_ADMIN' || t.role === 'SUPER_ADMIN') || schoolTeachers[0];
+              if (matchedTeacher) {
+                sub.teacher_id = matchedTeacher.id;
+                subjectsFixed++;
+              }
+            }
+          });
+
+          if (subjectsFixed > 0) {
+            details.push(`ปรับปรุง ID ครูประจำวิชาในตารางรายวิชาสำเร็จ ${subjectsFixed} รายการ`);
+          }
+
+          const assignmentById = new Map<string, any>();
+          (db.assignments || []).forEach((asg: any) => {
+            const aid = String(asg.id);
+            assignmentById.set(aid, asg);
+
+            const sch = String(asg.school || '').trim().toLowerCase();
+            const subName = String(asg.subject || '').trim().toLowerCase();
+            let updated = false;
+
+            if (!asg.subject_id || !subjectById.has(String(asg.subject_id))) {
+              const matchedSubject = subjectByKey.get(`${sch}::${subName}`) || subjectByKey.get(`global::${subName}`);
+              if (matchedSubject) {
+                asg.subject_id = matchedSubject.id;
+                updated = true;
+              }
+            }
+
+            if (!asg.teacher_id) {
+              const creator = String(asg.created_by || '').trim();
+              const schoolTeachers = teachersBySchool.get(sch) || [];
+              const matchedTeacher = schoolTeachers.find((t: any) => t.name === creator || t.username === creator) || schoolTeachers[0];
+              if (matchedTeacher) {
+                asg.teacher_id = matchedTeacher.id;
+                updated = true;
+              }
+            }
+
+            if (updated) assignmentsLinked++;
+          });
+
+          if (assignmentsLinked > 0) {
+            details.push(`เชื่อมโยง subject_id และ teacher_id ให้กับชุดแบบทดสอบสำเร็จ ${assignmentsLinked} รายการ`);
+          }
+
+          (db.questions || []).forEach((q: any) => {
+            const qAsgId = String(q.assignment_id || q.assignmentId || '');
+            const sch = String(q.school || '').trim().toLowerCase();
+            const subName = String(q.subject || '').trim().toLowerCase();
+            let updated = false;
+
+            let targetAsg = qAsgId ? assignmentById.get(qAsgId) : null;
+            if (targetAsg) {
+              if (q.subject_id !== targetAsg.subject_id) {
+                q.subject_id = targetAsg.subject_id;
+                updated = true;
+              }
+              if (q.teacher_id !== targetAsg.teacher_id) {
+                q.teacher_id = targetAsg.teacher_id;
+                updated = true;
+              }
+              if (!q.school && targetAsg.school) {
+                q.school = targetAsg.school;
+                updated = true;
+              }
+            } else {
+              const matchedSubject = subjectByKey.get(`${sch}::${subName}`) || subjectByKey.get(`global::${subName}`);
+              if (matchedSubject) {
+                if (q.subject_id !== matchedSubject.id) {
+                  q.subject_id = matchedSubject.id;
+                  updated = true;
+                }
+                if (!q.teacher_id && matchedSubject.teacher_id) {
+                  q.teacher_id = matchedSubject.teacher_id;
+                  updated = true;
+                }
+              }
+            }
+
+            if (updated) questionsLinked++;
+          });
+
+          if (questionsLinked > 0) {
+            details.push(`ซิงค์โครงสร้างคลังข้อสอบให้ตรงกับวิชาและแบบทดสอบ ${questionsLinked} ข้อ`);
+          }
+
+          (db.exam_results || []).forEach((r: any) => {
+            const rAsgId = String(r.assignment_id || r.assignmentId || '');
+            const sch = String(r.school || '').trim().toLowerCase();
+            const subName = String(r.subject || '').trim().toLowerCase();
+            let updated = false;
+
+            let targetAsg = rAsgId ? assignmentById.get(rAsgId) : null;
+            if (targetAsg) {
+              if (r.subject_id !== targetAsg.subject_id) {
+                r.subject_id = targetAsg.subject_id;
+                updated = true;
+              }
+              if (!r.school && targetAsg.school) {
+                r.school = targetAsg.school;
+                updated = true;
+              }
+            } else {
+              const matchedSubject = subjectByKey.get(`${sch}::${subName}`) || subjectByKey.get(`global::${subName}`);
+              if (matchedSubject) {
+                if (r.subject_id !== matchedSubject.id) {
+                  r.subject_id = matchedSubject.id;
+                  updated = true;
+                }
+              }
+            }
+
+            if (updated) resultsLinked++;
+          });
+
+          if (resultsLinked > 0) {
+            details.push(`ปรับโครงสร้างข้อมูลผลการสอบและเชื่อมโยง ID รายวิชาสำเร็จ ${resultsLinked} รายการ`);
+          }
+
+          if (details.length === 0) {
+            details.push('โครงสร้างฐานข้อมูลถูกต้องสมบูรณ์แล้ว ไม่พบการเชื่อมโยง ID ที่ผิดปกติ');
+          }
+
+          saveJsonDb(db);
+
+          return res.json({
+            success: true,
+            report: {
+              subjectsFixed,
+              assignmentsLinked,
+              questionsLinked,
+              resultsLinked,
+              orphansCleaned: 0,
+              details
+            }
+          });
+        } catch (err: any) {
+          return res.status(500).json({ success: false, message: err.message });
+        }
       }
 
       case 'importFromSupabase': {

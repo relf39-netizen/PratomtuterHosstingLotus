@@ -7,12 +7,13 @@ import {
   Trash2, Users, Bell, X, TrendingUp, 
   ExternalLink, UserCog, Filter, Check, Eye, RefreshCw,
   Star, Zap, Target, Medal, ArrowUpRight, Trophy, ImageIcon, Upload, Save, Loader2, Settings, Info,
-  Sparkles, ShieldAlert
+  Sparkles, ShieldAlert, Database, Wrench
 } from 'lucide-react';
 import { 
   getSchools, manageSchool, getAllTeachers, getAllPendingRegistrations, 
   approveRegistration, rejectRegistration, getSuperAdminStats,
-  getAppSettings, updateAppSettings, uploadLogo, AppSettings
+  getAppSettings, updateAppSettings, uploadLogo, AppSettings,
+  cleanupOrphanedSubjects, repairDatabaseStructure
 } from '../services/api';
 
 interface SuperAdminDashboardProps {
@@ -26,7 +27,7 @@ const GRADE_LABELS: Record<string, string> = {
 };
 
 const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onSettingsUpdate }) => {
-  const [activeView, setActiveView] = useState<'OVERVIEW' | 'SCHOOLS' | 'REGISTRATIONS' | 'SETTINGS'>('OVERVIEW');
+  const [activeView, setActiveView] = useState<'OVERVIEW' | 'SCHOOLS' | 'REGISTRATIONS' | 'DATABASE' | 'SETTINGS'>('OVERVIEW');
   const [schools, setSchools] = useState<School[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
@@ -45,6 +46,70 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
   const [migrationLoading, setMigrationLoading] = useState(false);
   const [migrationReport, setMigrationReport] = useState<any>(null);
   const [migrationError, setMigrationError] = useState('');
+  const [isCleaning, setIsCleaning] = useState(false);
+  const [cleanupReport, setCleanupReport] = useState<{
+    success: boolean;
+    deletedAssignmentsCount: number;
+    deletedQuestionsCount: number;
+    deletedResultsCount: number;
+    message?: string;
+  } | null>(null);
+
+  const [isRepairing, setIsRepairing] = useState(false);
+  const [repairReport, setRepairReport] = useState<{
+    success: boolean;
+    report?: {
+      subjectsFixed: number;
+      assignmentsLinked: number;
+      questionsLinked: number;
+      resultsLinked: number;
+      orphansCleaned: number;
+      details: string[];
+    };
+    message?: string;
+  } | null>(null);
+
+  const handleRepairDatabase = async () => {
+    setIsRepairing(true);
+    setRepairReport(null);
+    try {
+      const res = await repairDatabaseStructure();
+      setRepairReport(res);
+      if (res.success) {
+        await loadData();
+      }
+    } catch (err: any) {
+      setRepairReport({
+        success: false,
+        message: 'เกิดข้อผิดพลาดในการเชื่อมต่อเพื่อปรับปรุงโครงสร้างฐานข้อมูล'
+      });
+    }
+    setIsRepairing(false);
+  };
+
+  const handleCleanupOrphanedData = async () => {
+    if (!confirm('ยืนยันระบบตรวจสอบและล้างข้อมูลวิชาตกค้างหรือไม่?\n\nระบบจะตรวจสอบวิชาที่คุณครูเคยลบออก และทำการลบชุดแบบทดสอบ ข้อสอบ และประวัติการสอบที่ไม่มีวิชารองรับออกจากฐานข้อมูลทั้งหมด เพื่อคืนพื้นที่จัดเก็บและปรับปรุง Dashboard นักเรียนให้ถูกต้อง')) {
+      return;
+    }
+    setIsCleaning(true);
+    setCleanupReport(null);
+    try {
+      const res = await cleanupOrphanedSubjects();
+      setCleanupReport(res);
+      if (res.success) {
+        await loadData();
+      }
+    } catch (err: any) {
+      setCleanupReport({
+        success: false,
+        deletedAssignmentsCount: 0,
+        deletedQuestionsCount: 0,
+        deletedResultsCount: 0,
+        message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ'
+      });
+    }
+    setIsCleaning(false);
+  };
 
   // School Detail Modal
   const [selectedSchool, setSelectedSchool] = useState<School | null>(null);
@@ -406,10 +471,11 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
                     <HeaderStat label="คุณครูรวม" val={districtStats.totalTeachers} sub="คน" />
                 </div>
 
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap justify-center lg:justify-end">
                     <NavBtn active={activeView === 'OVERVIEW'} onClick={() => setActiveView('OVERVIEW')} icon={<TrendingUp size={18}/>} label="สรุปภาพรวม"/>
                     <NavBtn active={activeView === 'SCHOOLS'} onClick={() => setActiveView('SCHOOLS')} icon={<Building2 size={18}/>} label="โรงเรียนในสังกัด"/>
                     <NavBtn active={activeView === 'REGISTRATIONS'} onClick={() => setActiveView('REGISTRATIONS')} icon={<Bell size={18}/>} label={`คำขอ (${schoolRequests.length})`}/>
+                    <NavBtn active={activeView === 'DATABASE'} onClick={() => setActiveView('DATABASE')} icon={<Database size={18}/>} label="ปรับปรุงฐานข้อมูล"/>
                     <NavBtn active={activeView === 'SETTINGS'} onClick={() => setActiveView('SETTINGS')} icon={<Settings size={18}/>} label="ตั้งค่า App"/>
                     <button onClick={onLogout} className="p-4 bg-red-500/20 text-red-400 rounded-2xl hover:bg-red-500 hover:text-white transition shadow-sm"><LogOut size={24}/></button>
                 </div>
@@ -793,6 +859,206 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
             </div>, document.body
         )}
 
+        {activeView === 'DATABASE' && (
+            <div className="animate-fade-in space-y-8">
+                {/* Banner */}
+                <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 p-8 rounded-[40px] text-white shadow-xl relative overflow-hidden border-b-8 border-indigo-500">
+                    <div className="absolute top-0 right-0 p-8 opacity-10 pointer-events-none"><Database size={200}/></div>
+                    <div className="relative z-10 max-w-3xl">
+                        <div className="flex items-center gap-3 mb-3">
+                            <div className="p-3 bg-indigo-500/30 backdrop-blur-md rounded-2xl text-indigo-300 border border-indigo-400/30">
+                                <Wrench size={28}/>
+                            </div>
+                            <div>
+                                <h2 className="text-2xl font-black">ศูนย์ปรับปรุงและตรวจสอบโครงสร้างฐานข้อมูล</h2>
+                                <p className="text-xs text-indigo-300 font-bold uppercase tracking-widest">Database Structure Integrity & ID Synchronization Hub</p>
+                            </div>
+                        </div>
+                        <p className="text-sm text-slate-300 leading-relaxed font-bold mt-2">
+                            เครื่องมือสำหรับ Super Admin ในการสแกน และปรับปรุงโครงสร้างความเชื่อมโยงของ ID ต่างๆ ทั้งหมดในระบบ (ID ครู, ID รายวิชา, ID แบบทดสอบ, คลังข้อสอบ และผลการสอบ) ให้มีความถูกต้อง สมบูรณ์แบบ และป้องกันปัญหาข้อมูลไม่ตรงกัน
+                        </p>
+                    </div>
+                </div>
+
+                {/* 4 Feature Columns explaining structural checks */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mb-4">
+                                <Users size={24}/>
+                            </div>
+                            <h3 className="font-black text-slate-800 text-base mb-1">1. รายวิชา & คุณครู</h3>
+                            <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                                ซิงค์ <code className="bg-slate-100 px-1 py-0.5 rounded">teacher_id</code> ในตารางรายวิชาเข้ากับผู้ดูแลระบบหรือครูประจำวิชาในโรงเรียน เพื่อไม่ให้วิชากลายเป็นวิชาที่ไม่มีผู้ดูแล
+                            </p>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-full mt-4 w-fit">
+                            <CheckCircle size={14}/> Auto-Assign Teacher ID
+                        </span>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <div className="w-12 h-12 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center mb-4">
+                                <Target size={24}/>
+                            </div>
+                            <h3 className="font-black text-slate-800 text-base mb-1">2. แบบทดสอบ & รายวิชา</h3>
+                            <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                                ผูก <code className="bg-slate-100 px-1 py-0.5 rounded">subject_id</code> และ <code className="bg-slate-100 px-1 py-0.5 rounded">teacher_id</code> ให้กับชุดแบบทดสอบทุกชุด ป้องกันปัญหาแบบทดสอบหลุดจากรายวิชาหลัก
+                            </p>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-full mt-4 w-fit">
+                            <CheckCircle size={14}/> Bind Subject & Teacher ID
+                        </span>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-4">
+                                <ShieldCheck size={24}/>
+                            </div>
+                            <h3 className="font-black text-slate-800 text-base mb-1">3. คลังข้อสอบรายข้อ</h3>
+                            <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                                เชื่อมโยงข้อสอบทุกข้อกับ <code className="bg-slate-100 px-1 py-0.5 rounded">assignment_id</code>, <code className="bg-slate-100 px-1 py-0.5 rounded">subject_id</code> และ <code className="bg-slate-100 px-1 py-0.5 rounded">school</code> ให้สมบูรณ์แบบเพื่อการดึงข้อสอบที่แม่นยำ
+                            </p>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-amber-600 bg-amber-50 px-3 py-1.5 rounded-full mt-4 w-fit">
+                            <CheckCircle size={14}/> Question ID Linking
+                        </span>
+                    </div>
+
+                    <div className="bg-white p-6 rounded-[32px] border border-slate-100 shadow-sm flex flex-col justify-between">
+                        <div>
+                            <div className="w-12 h-12 bg-purple-50 text-purple-600 rounded-2xl flex items-center justify-center mb-4">
+                                <BarChart3 size={24}/>
+                            </div>
+                            <h3 className="font-black text-slate-800 text-base mb-1">4. ประวัติการทำข้อสอบ</h3>
+                            <p className="text-xs text-slate-500 font-bold leading-relaxed">
+                                อัปเดต <code className="bg-slate-100 px-1 py-0.5 rounded">subject_id</code> ในตารางผลการสอบนักเรียน ให้ตรงกับวิชาในระบบเพื่อการแสดงผล Dashboard นักเรียนที่ถูกต้อง
+                            </p>
+                        </div>
+                        <span className="inline-flex items-center gap-1.5 text-[11px] font-black text-purple-600 bg-purple-50 px-3 py-1.5 rounded-full mt-4 w-fit">
+                            <CheckCircle size={14}/> Sync Exam Results ID
+                        </span>
+                    </div>
+                </div>
+
+                {/* Main Action Box */}
+                <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-xl space-y-6">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-6 border-b border-slate-100">
+                        <div>
+                            <h3 className="text-xl font-black text-slate-800 flex items-center gap-2">
+                                <RefreshCw className={isRepairing ? "animate-spin text-indigo-600" : "text-indigo-600"} size={24}/>
+                                กดปุ่มเพื่อเริ่มกระบวนการซิงค์และปรับปรุงโครงสร้างฐานข้อมูล
+                            </h3>
+                            <p className="text-xs text-slate-400 font-bold mt-1">
+                                ระบบจะทำการตรวจสอบตารางทั้งหมดในระบบ MySQL/JSON DB แล้วทำการเชื่อมโยง ID ต่างๆ ให้อัตโนมัติโดยไม่กระทบข้อมูลหลัก
+                            </p>
+                        </div>
+
+                        <button
+                            onClick={handleRepairDatabase}
+                            disabled={isRepairing}
+                            className="px-8 py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-sm rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-indigo-200 transition active:scale-95 disabled:opacity-50 whitespace-nowrap"
+                        >
+                            {isRepairing ? <Loader2 className="animate-spin" size={20}/> : <Wrench size={20}/>}
+                            {isRepairing ? 'กำลังปรับปรุงโครงสร้างฐานข้อมูล...' : 'เริ่มปรับปรุงโครงสร้างฐานข้อมูล'}
+                        </button>
+                    </div>
+
+                    {/* Repair Report Results */}
+                    {repairReport && (
+                        <div className={`p-6 rounded-[30px] border ${repairReport.success ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
+                            <div className="flex items-center gap-3 mb-4">
+                                {repairReport.success ? <CheckCircle className="text-emerald-600 shrink-0" size={28}/> : <XCircle className="text-red-600 shrink-0" size={28}/>}
+                                <div>
+                                    <h4 className="font-black text-base">
+                                        {repairReport.success ? 'ผลการปรับปรุงโครงสร้างฐานข้อมูลสำเร็จ' : 'เกิดข้อผิดพลาดในการปรับปรุงโครงสร้างฐานข้อมูล'}
+                                    </h4>
+                                    <p className="text-xs font-bold opacity-80">
+                                        {repairReport.success ? 'ระบบได้ทำการสแกนและซิงค์ ID ทั้งหมดเรียบร้อยแล้ว' : repairReport.message}
+                                    </p>
+                                </div>
+                            </div>
+
+                            {repairReport.success && repairReport.report && (
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
+                                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">วิชาที่ปรับปรุง ID ครู</p>
+                                            <p className="text-2xl font-black text-indigo-600">{repairReport.report.subjectsFixed}</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">แบบทดสอบที่เชื่อมโยง</p>
+                                            <p className="text-2xl font-black text-indigo-600">{repairReport.report.assignmentsLinked}</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ข้อสอบที่ซิงค์ ID</p>
+                                            <p className="text-2xl font-black text-indigo-600">{repairReport.report.questionsLinked}</p>
+                                        </div>
+                                        <div className="bg-white p-4 rounded-2xl shadow-sm border border-emerald-100">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">ประวัติสอบที่ซิงค์ ID</p>
+                                            <p className="text-2xl font-black text-indigo-600">{repairReport.report.resultsLinked}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-5 rounded-2xl border border-emerald-100 space-y-2">
+                                        <p className="font-black text-xs text-slate-700 uppercase tracking-wider">บันทึกรายละเอียดการปรับปรุง (System Logs):</p>
+                                        <ul className="text-xs space-y-1.5 font-bold text-slate-600 pl-2">
+                                            {repairReport.report.details.map((item, idx) => (
+                                                <li key={idx} className="flex items-start gap-2">
+                                                    <span className="text-emerald-500 font-bold">✓</span>
+                                                    <span>{item}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Secondary Section: ล้างข้อมูลวิชาตกค้าง */}
+                <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-md space-y-4">
+                    <div className="flex items-center gap-3">
+                        <div className="p-3 bg-red-50 text-red-600 rounded-2xl">
+                            <Trash2 size={24}/>
+                        </div>
+                        <div>
+                            <h4 className="font-black text-slate-800 text-lg">สแกนและล้างข้อมูลวิชาตกค้างที่ถูกลบไปแล้ว</h4>
+                            <p className="text-xs text-slate-400 font-bold">กรณีที่คุณครูลบรายวิชาออก แต่ยังมีชุดแบบทดสอบค้างอยู่ สามารถกดปุ่มนี้เพื่อเคลียร์ข้อมูลส่วนที่ลบทิ้งได้ทันที</p>
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={handleCleanupOrphanedData}
+                        disabled={isCleaning}
+                        className="w-full md:w-auto px-8 py-4 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-red-200 transition active:scale-95 disabled:opacity-50"
+                    >
+                        {isCleaning ? <Loader2 className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
+                        {isCleaning ? 'กำลังตรวจสอบและล้างข้อมูลตกค้าง...' : 'ตรวจสอบและล้างข้อมูลวิชาตกค้างในระบบ'}
+                    </button>
+
+                    {cleanupReport && (
+                        <div className={`p-5 rounded-2xl border ${cleanupReport.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                            <p className="font-black text-sm flex items-center gap-2 mb-2">
+                                {cleanupReport.success ? <CheckCircle size={18} className="text-emerald-600"/> : <XCircle size={18} className="text-red-600"/>}
+                                {cleanupReport.success ? 'ตรวจสอบและล้างข้อมูลเรียบร้อยแล้ว' : 'เกิดข้อผิดพลาดในการล้างข้อมูล'}
+                            </p>
+                            {cleanupReport.success && (
+                                <div className="text-xs space-y-1 font-bold pl-6">
+                                    <p>• ลบชุดแบบทดสอบตกค้าง: <span className="font-black text-indigo-600">{cleanupReport.deletedAssignmentsCount}</span> รายการ</p>
+                                    <p>• ลบข้อสอบตกค้าง: <span className="font-black text-indigo-600">{cleanupReport.deletedQuestionsCount}</span> ข้อ</p>
+                                    <p>• ลบประวัติการสอบตกค้าง: <span className="font-black text-indigo-600">{cleanupReport.deletedResultsCount}</span> รายการ</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+        )}
+
         {activeView === 'SETTINGS' && (
             <div className="animate-fade-in space-y-6">
                 <div className="bg-white p-10 rounded-[40px] shadow-xl border border-slate-100 flex flex-col items-center">
@@ -889,6 +1155,52 @@ const SuperAdminDashboard: React.FC<SuperAdminDashboardProps> = ({ onLogout, onS
                                     บันทึก
                                 </button>
                             </div>
+                        </div>
+
+                        {/* 🧹 ระบบล้างข้อมูลรายวิชาและข้อสอบตกค้าง */}
+                        <div className="pt-8 border-t border-slate-200 text-left space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="p-3 bg-red-50 text-red-600 rounded-2xl">
+                                    <Trash2 size={24}/>
+                                </div>
+                                <div>
+                                    <h4 className="font-black text-slate-800 text-base">ระบบตรวจสอบและล้างข้อมูลวิชาตกค้าง</h4>
+                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Orphaned Data Cleaner & System Sanitizer</p>
+                                </div>
+                            </div>
+
+                            <p className="text-xs text-slate-500 leading-relaxed font-bold">
+                                กรณีที่คุณครูเคยลบรายวิชาออกจากระบบก่อนหน้านี้ แต่ยังมีแบบทดสอบ ข้อสอบ หรือประวัติการสอบตกค้างอยู่ในฐานข้อมูล ส่งผลให้ Dashboard ของนักเรียนอาจยังแสดงรายวิชานั้นๆ ปุ่มนี้จะทำการสแกนฐานข้อมูลเพื่อลบข้อมูลที่ไม่มีรายวิชารองรับทั้งหมดให้อัตโนมัติ
+                            </p>
+
+                            <button 
+                                onClick={handleCleanupOrphanedData}
+                                disabled={isCleaning}
+                                className="w-full py-4 bg-red-600 hover:bg-red-700 text-white font-black rounded-2xl flex items-center justify-center gap-3 shadow-lg shadow-red-200 transition active:scale-95 disabled:opacity-50"
+                            >
+                                {isCleaning ? <Loader2 className="animate-spin" size={20}/> : <ShieldCheck size={20}/>}
+                                {isCleaning ? 'กำลังตรวจสอบและล้างข้อมูลตกค้าง...' : 'ตรวจสอบและล้างข้อมูลวิชาตกค้างในระบบ'}
+                            </button>
+
+                            {cleanupReport && (
+                                <div className={`p-5 rounded-2xl border ${cleanupReport.success ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                                    <p className="font-black text-sm flex items-center gap-2 mb-2">
+                                        {cleanupReport.success ? <CheckCircle size={18} className="text-emerald-600"/> : <XCircle size={18} className="text-red-600"/>}
+                                        {cleanupReport.success ? 'ตรวจสอบและล้างข้อมูลเรียบร้อยแล้ว' : 'เกิดข้อผิดพลาดในการล้างข้อมูล'}
+                                    </p>
+                                    {cleanupReport.success && (
+                                        <div className="text-xs space-y-1 font-bold pl-6">
+                                            <p>• ลบชุดแบบทดสอบตกค้าง: <span className="font-black text-indigo-600">{cleanupReport.deletedAssignmentsCount}</span> รายการ</p>
+                                            <p>• ลบข้อสอบตกค้าง: <span className="font-black text-indigo-600">{cleanupReport.deletedQuestionsCount}</span> ข้อ</p>
+                                            <p>• ลบประวัติการสอบตกค้าง: <span className="font-black text-indigo-600">{cleanupReport.deletedResultsCount}</span> รายการ</p>
+                                            <p className="text-slate-500 text-[11px] mt-2 italic">* รายวิชาที่ไม่พบในตารางวิชาหลักสำหรับโรงเรียนนั้นๆ ถูกเคลียร์ออกจากระบบเรียบร้อยแล้ว</p>
+                                        </div>
+                                    )}
+                                    {!cleanupReport.success && (
+                                        <p className="text-xs font-bold pl-6">{cleanupReport.message}</p>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* 🛡️ Auto-Healing Database Status Panel */}

@@ -626,3 +626,44 @@ export const getSuperAdminStats = async () => {
         return { students: [], results: [], teachers: [] };
     }
 };
+
+export const cleanupOrphanedSubjects = async (): Promise<{
+  success: boolean;
+  deletedAssignmentsCount: number;
+  deletedQuestionsCount: number;
+  deletedResultsCount: number;
+  message?: string;
+}> => {
+    try {
+        const res = await apiCall('cleanupOrphanedSubjects');
+        return {
+          success: !!res.success,
+          deletedAssignmentsCount: res.deletedAssignmentsCount || 0,
+          deletedQuestionsCount: res.deletedQuestionsCount || 0,
+          deletedResultsCount: res.deletedResultsCount || 0,
+          message: res.message
+        };
+    } catch (e) {
+        return { success: false, deletedAssignmentsCount: 0, deletedQuestionsCount: 0, deletedResultsCount: 0, message: 'เกิดข้อผิดพลาดในการเชื่อมต่อ' };
+    }
+};
+
+export const repairDatabaseStructure = async (): Promise<{
+  success: boolean;
+  report?: {
+    subjectsFixed: number;
+    assignmentsLinked: number;
+    questionsLinked: number;
+    resultsLinked: number;
+    orphansCleaned: number;
+    details: string[];
+  };
+  message?: string;
+}> => {
+    try {
+        const res = await apiCall('repairDatabaseStructure');
+        return res;
+    } catch (e: any) {
+        return { success: false, message: e?.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ' };
+    }
+};
