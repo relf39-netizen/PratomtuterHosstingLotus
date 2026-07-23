@@ -53,6 +53,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
   const [examCreatorMode, setExamCreatorMode] = useState<'AI_INTERACTIVE' | 'RANDOM_PICK'>('AI_INTERACTIVE');
   const [aiExamPrompt, setAiExamPrompt] = useState('');
   const [aiExamCount, setAiExamCount] = useState(10);
+  const [unitAiQuestionCount, setUnitAiQuestionCount] = useState(5);
   const [draftAiQuestions, setDraftAiQuestions] = useState<(GeneratedQuestion & { unit?: string })[]>([]);
   const [accumulatedExamQuestions, setAccumulatedExamQuestions] = useState<(GeneratedQuestion & { unit?: string })[]>([]);
   const [isGeneratingAiExamDraft, setIsGeneratingAiExamDraft] = useState(false);
@@ -233,7 +234,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
           const existingData = await getQuestionsBySubjectAndGrade(assignSubject, assignGrade, teacher.school);
           const existingTexts = existingData.map(q => q.text).slice(0, 20);
 
-          const generated = await generateQuestionWithAI(assignSubject, assignGrade, assignAiTopic, 5, 'normal', existingTexts);
+          const generated = await generateQuestionWithAI(assignSubject, assignGrade, assignAiTopic, unitAiQuestionCount, 'normal', existingTexts);
           if (generated) {
               const withUnit = generated.map(q => ({ ...q, unit: assignAiTopic }));
               setNewlyGeneratedQuestions(prev => [...prev, ...withUnit]);
@@ -1038,10 +1039,25 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                         
                         <div className="space-y-4">
                             <input type="text" value={assignAiTopic} onChange={e => setAssignAiTopic(e.target.value)} placeholder="ระบุหัวข้อเน้นย้ำ (AI จะช่วยร่างให้)" className="w-full p-4 rounded-2xl bg-white/10 border border-white/20 text-white placeholder-indigo-300 font-bold outline-none focus:bg-white/20 transition"/>
+                            
+                            <div className="flex items-center justify-between bg-white/15 px-4 py-3 rounded-2xl border border-white/20 text-xs font-black text-white">
+                                <span className="text-indigo-100">จำนวนข้อสอบที่ต้องการสร้าง:</span>
+                                <div className="flex items-center gap-2">
+                                    <input 
+                                        type="number" 
+                                        value={unitAiQuestionCount} 
+                                        onChange={e => setUnitAiQuestionCount(Math.max(1, Math.min(50, Number(e.target.value))))}
+                                        className="w-20 min-w-[70px] px-3 py-1.5 bg-white border border-indigo-300 rounded-xl font-black text-base text-slate-900 text-center outline-none focus:ring-2 focus:ring-indigo-400 shadow-sm"
+                                        min={1} max={50}
+                                    />
+                                    <span className="text-indigo-200 font-bold">ข้อ</span>
+                                </div>
+                            </div>
+
                             <div className="grid grid-cols-1 gap-3">
                                 <button onClick={handleAssignGenerateQuestions} disabled={isGeneratingAi || !assignAiTopic} className="bg-indigo-500 hover:bg-indigo-400 text-white p-4 rounded-2xl font-black text-xs flex flex-row items-center justify-center gap-2 transition active:scale-95 disabled:opacity-50 shadow-lg">
                                     {isGeneratingAi ? <Loader2 className="animate-spin" size={20}/> : <Sparkles size={20}/>}
-                                    สร้าง 5 ข้อ ด้วย AI
+                                    สร้าง {unitAiQuestionCount} ข้อ ด้วย AI
                                 </button>
                                 <div className="grid grid-cols-2 gap-3">
                                     <button onClick={handleOpenBank} className="bg-white border-2 border-indigo-100 text-indigo-600 p-4 rounded-2xl font-black text-xs flex flex-col items-center justify-center gap-2 transition hover:bg-indigo-50 active:scale-95 shadow-sm">
@@ -1690,14 +1706,19 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                                     <h5 className="font-black text-slate-800 text-base flex items-center gap-2">📝 ระบุรายละเอียดข้อสอบที่ต้องการออกในรอบนี้</h5>
                                                     <p className="text-[10px] text-slate-400 font-bold mt-1">คุณสามารถออกโจทย์หัวข้อแรก แล้วเพิ่มเข้าชุดสะสม จากนั้นค่อยเปลี่ยนหัวข้อพิมพ์เพื่อออกโจทย์หัวข้อถัดไปได้ไม่จำกัด</p>
                                                 </div>
-                                                <div className="bg-white/80 backdrop-blur-sm px-3 py-1.5 rounded-xl border border-rose-100 flex items-center gap-2 text-xs font-black text-rose-600 shrink-0 shadow-sm">
+                                                <div className="bg-white/90 backdrop-blur-sm px-4 py-2 rounded-2xl border border-rose-200 flex items-center gap-2.5 text-xs font-black text-rose-700 shrink-0 shadow-sm">
                                                     <span>จำนวนข้อรอบนี้:</span>
-                                                    <input 
-                                                        type="number" 
-                                                        value={aiExamCount} 
-                                                        onChange={(e) => setAiExamCount(Math.max(1, Math.min(50, Number(e.target.value))))} 
-                                                        className="w-12 text-center bg-transparent focus:outline-none border-b border-rose-400 font-black"
-                                                    />
+                                                    <div className="flex items-center gap-1.5">
+                                                        <input 
+                                                            type="number" 
+                                                            value={aiExamCount} 
+                                                            onChange={(e) => setAiExamCount(Math.max(1, Math.min(100, Number(e.target.value))))} 
+                                                            className="w-20 min-w-[75px] px-3 py-1.5 bg-white border border-rose-300 rounded-xl font-black text-base text-slate-900 text-center outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-200 transition-all shadow-sm"
+                                                            min={1}
+                                                            max={100}
+                                                        />
+                                                        <span className="text-xs text-slate-500 font-bold">ข้อ</span>
+                                                    </div>
                                                 </div>
                                             </div>
 
@@ -1859,13 +1880,16 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
 
                                         <div className="shrink-0 bg-slate-50 p-6 rounded-3xl border border-slate-100">
                                             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 ml-1">ต้องการดึงจำนวนข้อสอบรวมทั้งหมด</label>
-                                            <input 
-                                                type="number" 
-                                                value={examTotalQuestions} 
-                                                onChange={(e) => setExamTotalQuestions(Number(e.target.value))}
-                                                className="w-full p-4 bg-white border-2 border-slate-200 rounded-2xl outline-none focus:bg-white focus:border-rose-400 transition font-black text-slate-700"
-                                                min={1} max={100}
-                                            />
+                                            <div className="relative flex items-center">
+                                                <input 
+                                                    type="number" 
+                                                    value={examTotalQuestions} 
+                                                    onChange={(e) => setExamTotalQuestions(Math.max(1, Math.min(200, Number(e.target.value))))}
+                                                    className="w-full min-w-[100px] px-5 py-3.5 bg-white border border-slate-300 focus:border-rose-500 focus:ring-2 focus:ring-rose-200 rounded-2xl outline-none transition font-black text-slate-900 text-lg shadow-sm"
+                                                    min={1} max={200}
+                                                />
+                                                <span className="absolute right-4 text-xs font-black text-slate-400 pointer-events-none">ข้อ</span>
+                                            </div>
                                             <p className="text-[10px] text-slate-400 mt-2 italic font-bold">* ระบบจะเฉลี่ยจำนวนข้อดึงจากแต่ละหน่วยที่เลือกให้เท่ากันที่สุดโดยอัตโนมัติ</p>
                                         </div>
 

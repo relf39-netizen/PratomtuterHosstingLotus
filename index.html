@@ -87,6 +87,19 @@
         padding-bottom: 0.45rem !important;
       }
 
+      /* Compact & visible number inputs */
+      input[type="number"] {
+        padding-left: 0.5rem !important;
+        padding-right: 0.5rem !important;
+        text-align: center !important;
+        -moz-appearance: textfield;
+      }
+      input[type="number"]::-webkit-outer-spin-button,
+      input[type="number"]::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+      }
+
       /* 3. Horizontal Padding (respecting pl- icon classes if present) */
       input:not([class*="pl-"]):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="hidden"]):not([type="submit"]):not([type="button"]),
       select:not([class*="pl-"]),
