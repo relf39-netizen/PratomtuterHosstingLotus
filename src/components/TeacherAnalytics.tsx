@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { ExamResult, Question, Student, SubjectConfig, Teacher, Assignment } from '../types';
 import { 
   Target, BarChart3, AlertCircle, CheckCircle2, BookOpen,
@@ -1149,7 +1150,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       )}
 
       {/* 🖨️ Printable Document Modal */}
-      {showPrintModal && (
+      {showPrintModal && createPortal(
         <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-2 sm:p-4 font-prompt animate-fade-in">
           <style>{`
             @media print {
@@ -1162,7 +1163,10 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 background: white !important;
                 color: black !important;
                 height: auto !important;
+                min-height: auto !important;
+                max-height: none !important;
                 overflow: visible !important;
+                position: static !important;
               }
               .fixed.inset-0 {
                 position: static !important;
@@ -1171,10 +1175,12 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 margin: 0 !important;
                 background: transparent !important;
                 height: auto !important;
+                max-height: none !important;
                 overflow: visible !important;
               }
               .print-modal-container {
                 position: static !important;
+                display: block !important;
                 width: 100% !important;
                 max-width: 100% !important;
                 margin: 0 !important;
@@ -1184,13 +1190,37 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 box-shadow: none !important;
                 background: white !important;
                 color: black !important;
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
               }
-              .printable-report {
-                width: 100% !important;
+              .print-modal-container * {
+                max-height: none !important;
+              }
+              .print-scroll-container {
+                display: block !important;
+                position: static !important;
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
                 padding: 0 !important;
                 margin: 0 !important;
                 background: white !important;
+                flex: none !important;
+              }
+              .printable-report {
+                display: block !important;
+                width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                background: white !important;
                 color: black !important;
+                height: auto !important;
+                max-height: none !important;
+                overflow: visible !important;
               }
               thead {
                 display: table-header-group !important;
@@ -1206,6 +1236,10 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 page-break-inside: auto !important;
                 width: 100% !important;
                 border-collapse: collapse !important;
+              }
+              .print-signature-block {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
               }
               .print\\:hidden {
                 display: none !important;
@@ -1242,7 +1276,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
             </div>
 
             {/* Scrollable Printable Content Area */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-100 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-100 custom-scrollbar print-scroll-container">
               <div className="printable-report space-y-6 text-slate-900 text-xs font-sarabun p-6 sm:p-8 bg-white rounded-2xl shadow-sm border border-slate-200/60 max-w-3xl mx-auto">
                 {/* Header */}
                 <div className="text-center space-y-1 pb-4 border-b-2 border-slate-900">
@@ -1416,7 +1450,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               </div>
 
               {/* ✍️ Signatures */}
-              <div className="pt-8 grid grid-cols-3 gap-6 text-center text-xs font-medium">
+              <div className="pt-8 grid grid-cols-3 gap-6 text-center text-xs font-medium print-signature-block">
                 <div className="space-y-8">
                   <p>ลงชื่อ..........................................................</p>
                   <p>({teacher?.name || '..........................................................'})<br/>ครูผู้สอน/ผู้สรุปรายงาน</p>
@@ -1452,7 +1486,8 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
             </div>
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     )}
     </div>
   );
