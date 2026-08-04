@@ -3,12 +3,8 @@ import { ExamResult, Question, Student, SubjectConfig, Teacher, Assignment } fro
 import { 
   Target, BarChart3, AlertCircle, CheckCircle2, BookOpen,
   Printer, Search, Award, Users, GraduationCap,
-  Sparkles, FileText, Layers
+  Sparkles, FileText, Layers, Filter, RotateCcw
 } from 'lucide-react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, 
-  Tooltip, ResponsiveContainer, Cell
-} from 'recharts';
 
 interface TeacherAnalyticsProps {
   stats: ExamResult[];
@@ -87,6 +83,8 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<'ALL' | 'UNIT_TEST' | 'MIDTERM' | 'FINAL'>('ALL');
   const [selectedSubject, setSelectedSubject] = useState<string>('ALL');
   const [selectedClassroom, setSelectedClassroom] = useState<string>('ALL');
+  const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>('ALL');
+  const [selectedTopic, setSelectedTopic] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'ANALYTICS' | 'SCORES'>('ANALYTICS');
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
@@ -143,12 +141,10 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       }
     });
 
-    // If no subject specifically assigned by ID, fall back to all available subjects in teacher's school
     if (setOfSubs.size === 0 && availableSubjects.length > 0) {
       availableSubjects.forEach(s => setOfSubs.add(s.name));
     }
 
-    // Also collect subjects present in results for this teacher's students
     stats.forEach(s => { if (s.subject) setOfSubs.add(s.subject); });
 
     return Array.from(setOfSubs);
@@ -166,11 +162,78 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     return Array.from(setOfRooms).sort();
   }, [students]);
 
+  // Available specific assignments list (ชุดข้อสอบ/การสอบ)
+  const assignmentOptions = useMemo(() => {
+    const map = new Map<string, { id: string; title: string; category?: string; subject?: string }>();
+    
+    assignments.forEach(a => {
+      map.set(String(a.id), {
+        id: String(a.id),
+        title: a.title || 'แบบทดสอบ',
+        category: a.category,
+        subject: a.subject
+      });
+    });
+
+    stats.forEach(r => {
+      if (r.assignmentId && !map.has(String(r.assignmentId))) {
+        const catLabel = r.category === 'MIDTERM' ? 'กลางภาค' : r.category === 'FINAL' ? 'ปลายภาค' : 'หน่วย';
+        map.set(String(r.assignmentId), {
+          id: String(r.assignmentId),
+          title: r.subject ? `แบบทดสอบวิชา ${r.subject} (${catLabel})` : `แบบทดสอบ ID: ${r.assignmentId}`,
+          category: r.category,
+          subject: r.subject
+        });
+      }
+    });
+
+    let list = Array.from(map.values());
+    if (selectedSubject !== 'ALL') {
+      list = list.filter(a => !a.subject || a.subject === selectedSubject);
+    }
+    if (selectedCategory !== 'ALL') {
+      list = list.filter(a => {
+        if (!a.category) return true;
+        if (selectedCategory === 'UNIT_TEST') return a.category === 'UNIT_TEST' || a.category === 'GENERAL';
+        return a.category === selectedCategory;
+      });
+    }
+
+    return list;
+  }, [assignments, stats, selectedSubject, selectedCategory]);
+
+  // Available specific units/topics list (หน่วยการเรียนรู้ / เรื่อง)
+  const topicOptions = useMemo(() => {
+    const topicSet = new Set<string>();
+
+    questions.forEach(q => {
+      if (q.unit && q.unit.trim()) {
+        if (selectedSubject === 'ALL' || q.subject === selectedSubject) {
+          topicSet.add(q.unit.trim());
+        }
+      }
+    });
+
+    stats.forEach(r => {
+      if (selectedSubject !== 'ALL' && r.subject && r.subject !== selectedSubject) return;
+      const detailsArray = typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
+      if (Array.isArray(detailsArray)) {
+        detailsArray.forEach((d: any) => {
+          if (d?.topic && d.topic.trim()) {
+            topicSet.add(d.topic.trim());
+          }
+        });
+      }
+    });
+
+    return Array.from(topicSet).sort();
+  }, [questions, stats, selectedSubject]);
+
   // Student scope filter helper
   const isStudentInTeacherScope = (studentId: string) => {
     if (canManageAll || !teacher) return true;
     const st = students.find(s => String(s.id).trim() === String(studentId).trim());
-    if (!st) return true; // Keep result if student record not found in scope
+    if (!st) return true;
 
     if (teacherGrades.length > 0 && st.grade && !teacherGrades.includes(st.grade)) {
       return false;
@@ -186,7 +249,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     return true;
   };
 
-  // 3. Helper to determine result category
+  // Helper to determine result category
   const getResultCategory = (res: ExamResult): 'UNIT_TEST' | 'MIDTERM' | 'FINAL' | 'GENERAL' => {
     if (res.category === 'MIDTERM') return 'MIDTERM';
     if (res.category === 'FINAL') return 'FINAL';
@@ -212,18 +275,15 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     return 'UNIT_TEST';
   };
 
-  // 4. Filter stats according to active filters (Teacher Scope, Category, Subject, Classroom)
+  // Filter stats according to active filters
   const filteredStats = useMemo(() => {
     return stats.filter(res => {
-      // Teacher scope filter
       if (!isStudentInTeacherScope(res.studentId)) return false;
 
-      // Subject filter
       if (selectedSubject !== 'ALL' && res.subject !== selectedSubject) {
         return false;
       }
 
-      // Category filter
       if (selectedCategory !== 'ALL') {
         const cat = getResultCategory(res);
         if (selectedCategory === 'UNIT_TEST' && cat !== 'UNIT_TEST' && cat !== 'GENERAL') return false;
@@ -231,7 +291,6 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
         if (selectedCategory === 'FINAL' && cat !== 'FINAL') return false;
       }
 
-      // Classroom filter
       if (selectedClassroom !== 'ALL') {
         const st = students.find(s => String(s.id).trim() === String(res.studentId).trim());
         if (st) {
@@ -240,7 +299,26 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
         }
       }
 
-      // Search term
+      if (selectedAssignmentId !== 'ALL') {
+        if (String(res.assignmentId) !== String(selectedAssignmentId)) {
+          return false;
+        }
+      }
+
+      if (selectedTopic !== 'ALL') {
+        const detailsArray = typeof res.details === 'string' ? JSON.parse(res.details) : res.details;
+        let matchTopic = false;
+        if (Array.isArray(detailsArray)) {
+          matchTopic = detailsArray.some((det: any) => {
+            if (det?.topic && det.topic.trim() === selectedTopic.trim()) return true;
+            const q = questions.find(q => String(q.id).trim() === String(det.questionId).trim());
+            if (q?.unit && q.unit.trim() === selectedTopic.trim()) return true;
+            return false;
+          });
+        }
+        if (!matchTopic) return false;
+      }
+
       if (searchTerm.trim()) {
         const term = searchTerm.toLowerCase();
         const st = students.find(s => String(s.id).trim() === String(res.studentId).trim());
@@ -253,9 +331,9 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
       return true;
     });
-  }, [stats, students, selectedSubject, selectedCategory, selectedClassroom, searchTerm, teacherGrades, teacherClassrooms, canManageAll, assignments]);
+  }, [stats, students, selectedSubject, selectedCategory, selectedClassroom, selectedAssignmentId, selectedTopic, searchTerm, teacherGrades, teacherClassrooms, canManageAll, assignments, questions]);
 
-  // 5. Compute Overall Score Metrics
+  // Compute Overall Score Metrics
   const summaryMetrics = useMemo(() => {
     if (filteredStats.length === 0) {
       return {
@@ -278,9 +356,32 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
     filteredStats.forEach(r => {
       studentIds.add(String(r.studentId).trim());
-      const qCount = r.totalQuestions || 1;
-      const pct = (r.score / qCount) * 100;
-      totalScoreSum += r.score;
+      
+      let qCount = r.totalQuestions || 1;
+      let scoreVal = r.score;
+
+      if (selectedTopic !== 'ALL') {
+        const detailsArray = typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
+        if (Array.isArray(detailsArray)) {
+          let topicScore = 0;
+          let topicTotal = 0;
+          detailsArray.forEach((det: any) => {
+            const q = questions.find(q => String(q.id).trim() === String(det.questionId).trim());
+            const unitName = q?.unit || det.topic;
+            if (unitName?.trim() === selectedTopic.trim() || det.topic?.trim() === selectedTopic.trim()) {
+              topicTotal += 1;
+              if (det.isCorrect) topicScore += 1;
+            }
+          });
+          if (topicTotal > 0) {
+            qCount = topicTotal;
+            scoreVal = topicScore;
+          }
+        }
+      }
+
+      const pct = (scoreVal / qCount) * 100;
+      totalScoreSum += scoreVal;
       totalQuestionsSum += qCount;
       if (pct > maxP) maxP = pct;
       if (pct < minP) minP = pct;
@@ -298,16 +399,19 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       passRate: Math.round((passC / filteredStats.length) * 100),
       passCount: passC
     };
-  }, [filteredStats]);
+  }, [filteredStats, selectedTopic, questions]);
 
-  // 6. Topic / Unit Analysis
+  // Topic / Unit Analysis
   const topicStats = useMemo(() => {
     const topics: Record<string, { name: string; correct: number; total: number }> = {};
     
     filteredStats.forEach(res => {
-      if (res.details && Array.isArray(res.details)) {
-        res.details.forEach(det => {
-          const topicName = det.topic || 'ทั่วไป';
+      const detailsArray = typeof res.details === 'string' ? JSON.parse(res.details) : res.details;
+      if (detailsArray && Array.isArray(detailsArray)) {
+        detailsArray.forEach((det: any) => {
+          const q = questions.find(q => String(q.id).trim() === String(det.questionId).trim());
+          const topicName = q?.unit || det.topic || 'หน่วยทั่วไป';
+          
           if (!topics[topicName]) {
             topics[topicName] = { name: topicName, correct: 0, total: 0 };
           }
@@ -321,9 +425,9 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       ...t,
       accuracy: t.total > 0 ? Math.round((t.correct / t.total) * 100) : 0
     })).sort((a, b) => b.accuracy - a.accuracy);
-  }, [filteredStats]);
+  }, [filteredStats, questions]);
 
-  // 7. Complete Item Analysis (วิเคราะห์ข้อสอบรายข้อ)
+  // Complete Item Analysis (วิเคราะห์ข้อสอบรายข้อ)
   const itemAnalysisData = useMemo(() => {
     const qMap: Record<string, { 
       id: string; 
@@ -339,17 +443,24 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     filteredStats.forEach(res => {
       const detailsArray = typeof res.details === 'string' ? JSON.parse(res.details) : res.details;
       if (detailsArray && Array.isArray(detailsArray)) {
-        detailsArray.forEach(det => {
+        detailsArray.forEach((det: any) => {
           if (!det || !det.questionId) return;
           const qIdStr = String(det.questionId).trim();
+          const q = questions.find(q => String(q.id).trim() === qIdStr);
+          const unitName = q?.unit || det.topic || 'หน่วยทั่วไป';
+
+          if (selectedTopic !== 'ALL') {
+            const isMatch = (unitName && unitName.trim() === selectedTopic.trim()) ||
+                            (det.topic && det.topic.trim() === selectedTopic.trim());
+            if (!isMatch) return;
+          }
 
           if (!qMap[qIdStr]) {
-            const q = questions.find(q => String(q.id).trim() === qIdStr);
             const foundText = q?.text || det.questionText || det.text || det.question || 'ไม่พบข้อมูลโจทย์ข้อสอบ';
             qMap[qIdStr] = {
               id: qIdStr,
               text: foundText,
-              unit: q?.unit || det.topic || 'หน่วยทั่วไป',
+              unit: unitName,
               choices: q?.choices || [],
               correctChoiceId: q?.correctChoiceId || '',
               correctCount: 0,
@@ -357,7 +468,6 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               totalCount: 0
             };
           } else if (qMap[qIdStr].text === 'ไม่พบข้อมูลโจทย์ข้อสอบ') {
-            const q = questions.find(q => String(q.id).trim() === qIdStr);
             const foundText = q?.text || det.questionText || det.text || det.question;
             if (foundText) {
               qMap[qIdStr].text = foundText;
@@ -391,10 +501,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
         };
       });
 
-    // 1. ข้อสอบที่นักเรียนทำผิดเยอะที่สุด (เรียงจาก % ทำผิด มากไปน้อย)
     const missedSorted = [...items].sort((a, b) => b.missRatePct - a.missRatePct);
-
-    // 2. ข้อสอบที่นักเรียนทำถูกเยอะที่สุด (เรียงจาก % ทำถูก มากไปน้อย)
     const correctSorted = [...items].sort((a, b) => b.correctRatePct - a.correctRatePct);
 
     return {
@@ -402,9 +509,22 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       missedSorted,
       correctSorted
     };
-  }, [filteredStats, questions]);
+  }, [filteredStats, questions, selectedTopic]);
 
-  // Helper function to format Thai date
+  const getSpecificSelectionTitle = () => {
+    if (selectedTopic !== 'ALL') {
+      return `หน่วยการเรียนรู้/เรื่อง: "${selectedTopic}"`;
+    }
+    if (selectedAssignmentId !== 'ALL') {
+      const asg = assignmentOptions.find(a => a.id === selectedAssignmentId);
+      return `ชุดข้อสอบ: "${asg?.title || selectedAssignmentId}"`;
+    }
+    if (selectedCategory !== 'ALL') {
+      return selectedCategory === 'UNIT_TEST' ? 'การสอบประจำหน่วยการเรียนรู้' : selectedCategory === 'MIDTERM' ? 'การสอบกลางภาค' : 'การสอบปลายภาค';
+    }
+    return 'ภาพรวมการสอบทั้งหมด';
+  };
+
   const formatThaiDate = (timestamp?: number) => {
     const d = timestamp ? new Date(timestamp) : new Date();
     return d.toLocaleDateString('th-TH', {
@@ -421,9 +541,17 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     }, 400);
   };
 
+  const handlePrintSpecificTopic = (topicName: string) => {
+    setSelectedTopic(topicName);
+    setShowPrintModal(true);
+    setTimeout(() => {
+      window.print();
+    }, 400);
+  };
+
   return (
     <div className="space-y-8 animate-fade-in font-prompt pb-20">
-      {/* 🛠️ Top Bar: Category Filters & Scope Information */}
+      {/* 🛠️ Top Bar & Filter Area */}
       <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-sm space-y-6">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
@@ -444,7 +572,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               onClick={handleTriggerPrint}
               className="px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-2xl flex items-center gap-2 transition shadow-lg active:scale-95"
             >
-              <Printer size={18}/> พิมพ์รายงานสรุปวิเคราะห์ข้อสอบ
+              <Printer size={18}/> พิมพ์รายงานวิเคราะห์คุณภาพข้อสอบ
             </button>
           </div>
         </div>
@@ -452,41 +580,41 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
         {/* 🎯 Exam Category Filter Tabs */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-2 rounded-2xl border border-slate-100">
           <button 
-            onClick={() => setSelectedCategory('ALL')}
+            onClick={() => { setSelectedCategory('ALL'); setSelectedAssignmentId('ALL'); }}
             className={`p-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${selectedCategory === 'ALL' ? 'bg-white text-indigo-600 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <Layers size={16}/> การสอบทั้งหมด
           </button>
           <button 
-            onClick={() => setSelectedCategory('UNIT_TEST')}
+            onClick={() => { setSelectedCategory('UNIT_TEST'); setSelectedAssignmentId('ALL'); }}
             className={`p-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${selectedCategory === 'UNIT_TEST' ? 'bg-emerald-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <BookOpen size={16}/> หน่วยการเรียนรู้
           </button>
           <button 
-            onClick={() => setSelectedCategory('MIDTERM')}
+            onClick={() => { setSelectedCategory('MIDTERM'); setSelectedAssignmentId('ALL'); }}
             className={`p-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${selectedCategory === 'MIDTERM' ? 'bg-amber-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <FileText size={16}/> สอบกลางภาค
           </button>
           <button 
-            onClick={() => setSelectedCategory('FINAL')}
+            onClick={() => { setSelectedCategory('FINAL'); setSelectedAssignmentId('ALL'); }}
             className={`p-3 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${selectedCategory === 'FINAL' ? 'bg-rose-600 text-white shadow-md' : 'text-slate-500 hover:text-slate-800'}`}
           >
             <Award size={16}/> สอบปลายภาค
           </button>
         </div>
 
-        {/* 🔍 Dropdown Filters: Subject, Classroom, Search */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2 border-t border-slate-100">
+        {/* 🔍 Dropdown Filters: Subject, Classroom, Specific Assignment, Specific Topic, Search */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 pt-2 border-t border-slate-100">
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-              เลือกรายวิชาที่คุณครูสอน
+              รายวิชา
             </label>
             <select 
               value={selectedSubject} 
-              onChange={e => setSelectedSubject(e.target.value)}
-              className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-xs text-slate-700 outline-none focus:border-indigo-400 transition"
+              onChange={e => { setSelectedSubject(e.target.value); setSelectedTopic('ALL'); setSelectedAssignmentId('ALL'); }}
+              className="w-full p-2.5 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-xs text-slate-700 outline-none focus:border-indigo-400 transition"
             >
               <option value="ALL">📚 ทุกรายวิชาที่สอน</option>
               {teacherSubjects.map(sub => (
@@ -497,12 +625,12 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
           <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-              เลือกห้องเรียน
+              ห้องเรียน
             </label>
             <select 
               value={selectedClassroom} 
               onChange={e => setSelectedClassroom(e.target.value)}
-              className="w-full p-3 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-xs text-slate-700 outline-none focus:border-indigo-400 transition"
+              className="w-full p-2.5 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-xs text-slate-700 outline-none focus:border-indigo-400 transition"
             >
               <option value="ALL">🏫 ทุกห้องเรียนที่คุณครูสอน</option>
               {classroomOptions.map(room => (
@@ -512,21 +640,86 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
           </div>
 
           <div>
+            <label className="block text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1.5 ml-1 font-black">
+              🎯 เจาะจงชุดข้อสอบ/การสอบ
+            </label>
+            <select 
+              value={selectedAssignmentId} 
+              onChange={e => setSelectedAssignmentId(e.target.value)}
+              className="w-full p-2.5 bg-indigo-50/60 border-2 border-indigo-100 rounded-xl font-bold text-xs text-indigo-900 outline-none focus:border-indigo-500 transition"
+            >
+              <option value="ALL">📋 รวมทุกชุดข้อสอบ</option>
+              {assignmentOptions.map(asg => (
+                <option key={asg.id} value={asg.id}>{asg.title}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-[10px] font-black text-emerald-600 uppercase tracking-widest mb-1.5 ml-1 font-black">
+              🎯 เจาะจงหน่วย/เรื่อง
+            </label>
+            <select 
+              value={selectedTopic} 
+              onChange={e => setSelectedTopic(e.target.value)}
+              className="w-full p-2.5 bg-emerald-50/60 border-2 border-emerald-100 rounded-xl font-bold text-xs text-emerald-900 outline-none focus:border-emerald-500 transition"
+            >
+              <option value="ALL">📖 รวมทุกหน่วยการเรียนรู้</option>
+              {topicOptions.map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
             <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 ml-1">
-              ค้นหาชื่อนักเรียน / วิชา
+              ค้นหานักเรียน / วิชา
             </label>
             <div className="relative">
               <input 
                 type="text" 
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
-                placeholder="พิมพ์ชื่อ หรือ รหัสนักเรียน..."
-                className="w-full pl-10 pr-4 py-3 bg-slate-50 border-2 border-slate-100 rounded-2xl font-bold text-xs text-slate-700 outline-none focus:border-indigo-400 transition"
+                placeholder="พิมพ์ชื่อ..."
+                className="w-full pl-9 pr-3 py-2.5 bg-slate-50 border-2 border-slate-100 rounded-xl font-bold text-xs text-slate-700 outline-none focus:border-indigo-400 transition"
               />
-              <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
             </div>
           </div>
         </div>
+
+        {/* 🎯 Prominent Banner when Specific Topic or Assignment is Filtered */}
+        {(selectedTopic !== 'ALL' || selectedAssignmentId !== 'ALL' || selectedCategory !== 'ALL') && (
+          <div className="p-4 bg-gradient-to-r from-indigo-50 via-purple-50 to-emerald-50 rounded-2xl border-2 border-indigo-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-inner">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-md">
+                <Filter size={18}/>
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">กำลังเปิดโหมดวิเคราะห์เฉพาะเจาะจง</span>
+                <h4 className="font-black text-sm text-slate-800">
+                  {getSpecificSelectionTitle()}
+                </h4>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+              <button 
+                onClick={handleTriggerPrint}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5 transition shadow-sm active:scale-95"
+              >
+                <Printer size={15}/> พิมพ์รายงานเฉพาะเรื่อง/ชุดนี้
+              </button>
+              <button 
+                onClick={() => { setSelectedTopic('ALL'); setSelectedAssignmentId('ALL'); setSelectedCategory('ALL'); }}
+                className="px-3 py-2 bg-white hover:bg-slate-100 text-slate-600 font-bold text-xs rounded-xl border border-slate-200 flex items-center gap-1 transition"
+                title="ล้างการเจาะจง"
+              >
+                <RotateCcw size={14}/> ล้าง
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 📊 Summary Metrics Cards */}
@@ -572,14 +765,14 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
         <div className="bg-white p-6 rounded-[30px] border-b-8 border-purple-500 shadow-sm relative overflow-hidden">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ประเภทการสอบที่เลือก</span>
+            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">ข้อสอบที่วิเคราะห์</span>
             <div className="p-2.5 bg-purple-50 text-purple-600 rounded-xl"><Sparkles size={20}/></div>
           </div>
-          <div className="text-2xl font-black text-purple-600 truncate mt-1">
-            {selectedCategory === 'ALL' ? 'ทุกประเภท' : selectedCategory === 'UNIT_TEST' ? 'หน่วยการเรียนรู้' : selectedCategory === 'MIDTERM' ? 'สอบกลางภาค' : 'สอบปลายภาค'}
+          <div className="text-3xl font-black text-purple-600 truncate mt-1">
+            {itemAnalysisData.all.length} <span className="text-xs font-bold text-slate-400">ข้อ</span>
           </div>
-          <p className="text-[10px] font-bold text-slate-400 mt-2">
-            ข้อสอบในระบบวิเคราะห์ {itemAnalysisData.all.length} ข้อ
+          <p className="text-[10px] font-bold text-slate-400 mt-2 truncate">
+            {selectedTopic !== 'ALL' ? `เฉพาะเรื่อง ${selectedTopic}` : selectedAssignmentId !== 'ALL' ? 'เฉพาะชุดข้อสอบที่เลือก' : 'ทุกข้อสอบ'}
           </p>
         </div>
       </div>
@@ -602,7 +795,70 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
       {activeTab === 'ANALYTICS' ? (
         <div className="space-y-8">
-          {/* 1️⃣ ข้อสอบที่นักเรียนทำผิดเยอะที่สุด & ข้อสอบที่ทำถูกเยอะที่สุด */}
+          {/* 📊 ความแม่นยำรายหน่วยการเรียนรู้/หัวข้อ & Interactive Topic Selection */}
+          {topicStats.length > 0 && (
+            <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <h4 className="font-black text-xl text-slate-800 flex items-center gap-3">
+                    <BarChart3 className="text-indigo-500"/> สรุปสถิติผลสัมฤทธิ์แยกตามหน่วยการเรียนรู้ / เรื่อง (%)
+                  </h4>
+                  <p className="text-xs font-bold text-slate-400 mt-1">
+                    คลิกปุ่ม "เจาะจงเรื่องนี้" เพื่อกรองดูผลการสอบและพิมพ์รายงานเฉพาะหน่วยการเรียนรู้นั้น
+                  </p>
+                </div>
+              </div>
+
+              {/* Topic Cards Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {topicStats.map((t, idx) => {
+                  const isSelected = selectedTopic === t.name;
+                  return (
+                    <div 
+                      key={idx} 
+                      className={`p-5 rounded-3xl border-2 transition-all space-y-3 ${isSelected ? 'bg-indigo-50/80 border-indigo-500 shadow-md ring-2 ring-indigo-300' : 'bg-slate-50 border-slate-100 hover:border-indigo-200'}`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="text-xs font-black text-slate-800 line-clamp-2">{t.name}</span>
+                        <span className={`px-2.5 py-1 rounded-full text-[11px] font-black shrink-0 ${t.accuracy >= 70 ? 'bg-emerald-100 text-emerald-800' : t.accuracy >= 50 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'}`}>
+                          {t.accuracy}%
+                        </span>
+                      </div>
+
+                      <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-500 ${t.accuracy >= 70 ? 'bg-emerald-500' : t.accuracy >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                          style={{ width: `${t.accuracy}%` }}
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] font-bold text-slate-400 pt-1">
+                        <span>ตอบถูก {t.correct} จาก {t.total} ข้อคำตอบ</span>
+                      </div>
+
+                      <div className="flex items-center gap-2 pt-2 border-t border-slate-200/60">
+                        <button 
+                          onClick={() => setSelectedTopic(t.name)}
+                          className={`flex-1 py-1.5 px-3 rounded-xl font-black text-xs transition flex items-center justify-center gap-1 ${isSelected ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200'}`}
+                        >
+                          {isSelected ? '✓ กำลังดูเรื่องนี้' : '🎯 เจาะจงดูเรื่องนี้'}
+                        </button>
+                        <button 
+                          onClick={() => handlePrintSpecificTopic(t.name)}
+                          className="p-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl transition"
+                          title="พิมพ์รายงานเฉพาะเรื่องนี้"
+                        >
+                          <Printer size={15}/>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* 1️⃣ ข้อสอบที่ทำผิดเยอะที่สุด & ทำถูกเยอะที่สุด */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* ❌ 1. ข้อสอบที่นักเรียนทำผิดเยอะที่สุด */}
             <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
@@ -611,7 +867,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                   <h4 className="font-black text-xl text-slate-800 flex items-center gap-3">
                     <AlertCircle className="text-rose-500" size={24}/> 1. ข้อสอบที่นักเรียนทำผิดเยอะที่สุด
                   </h4>
-                  <p className="text-[10px] font-bold text-slate-400 mt-1 ml-9">แสดงจำนวนกี่คนและคิดเป็นกี่เปอร์เซ็นต์</p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-1 ml-9">เพื่อนำไปปรับปรุงการจัดการเรียนการสอน</p>
                 </div>
                 <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-full text-xs font-black border border-rose-100">
                   {itemAnalysisData.missedSorted.length} ข้อ
@@ -624,14 +880,15 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                     <div key={q.id || idx} className="p-5 bg-slate-50 rounded-3xl border-2 border-slate-100 group hover:border-rose-200 transition-all">
                       <div className="flex items-start justify-between gap-3 mb-2">
                         <span className="px-2.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] font-black rounded-lg">
-                          ลำดับที่ {idx + 1}
+                          ลำดับที่ {idx + 1} (ตอบผิดมากสุด)
                         </span>
                         <span className={`px-3 py-0.5 rounded-full text-[10px] font-black border ${q.difficulty.color}`}>
                           {q.difficulty.icon} ความยาก: {q.difficulty.level}
                         </span>
                       </div>
 
-                      <p className="font-bold text-slate-800 text-sm leading-snug mb-3">{q.text}</p>
+                      <p className="font-bold text-slate-800 text-sm leading-snug mb-2">{q.text}</p>
+                      <p className="text-[10px] font-bold text-indigo-500 mb-3">📌 หน่วยการเรียนรู้: {q.unit}</p>
 
                       <div className="grid grid-cols-2 gap-2 bg-white p-3 rounded-2xl border border-slate-100 mb-3 text-xs font-bold">
                         <div className="text-rose-600">
@@ -646,8 +903,8 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         </div>
                       </div>
 
-                      <p className="text-[11px] font-bold text-slate-500 italic bg-amber-50/50 p-2.5 rounded-xl border border-amber-100">
-                        💡 ข้อเสนอแนะ: {q.difficulty.recommendation}
+                      <p className="text-[11px] font-bold text-slate-600 italic bg-amber-50/60 p-3 rounded-xl border border-amber-200/60 leading-relaxed">
+                        💡 ข้อเสนอแนะเพื่อปรับการสอน: {q.difficulty.recommendation}
                       </p>
                     </div>
                   ))
@@ -657,14 +914,14 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               </div>
             </div>
 
-            {/* ✅ 2. ข้อสอบที่นักเรียนทำถูกเยอะที่สุด (เรียงจากมากไปหาน้อย) */}
+            {/* ✅ 2. ข้อสอบที่นักเรียนทำถูกเยอะที่สุด */}
             <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
               <div className="flex items-center justify-between mb-6">
                 <div>
                   <h4 className="font-black text-xl text-slate-800 flex items-center gap-3">
                     <CheckCircle2 className="text-emerald-500" size={24}/> 2. ข้อสอบที่นักเรียนทำถูกเยอะที่สุด
                   </h4>
-                  <p className="text-[10px] font-bold text-slate-400 mt-1 ml-9">เรียงลำดับจากมากไปหาน้อย พร้อมจำแนกความยากง่าย</p>
+                  <p className="text-[10px] font-bold text-slate-400 mt-1 ml-9">ข้อสอบที่นักเรียนเข้าใจบทเรียนได้เป็นอย่างดี</p>
                 </div>
                 <span className="px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-xs font-black border border-emerald-100">
                   {itemAnalysisData.correctSorted.length} ข้อ
@@ -684,7 +941,8 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         </span>
                       </div>
 
-                      <p className="font-bold text-slate-800 text-sm leading-snug mb-3">{q.text}</p>
+                      <p className="font-bold text-slate-800 text-sm leading-snug mb-2">{q.text}</p>
+                      <p className="text-[10px] font-bold text-indigo-500 mb-3">📌 หน่วยการเรียนรู้: {q.unit}</p>
 
                       <div className="grid grid-cols-2 gap-2 bg-white p-3 rounded-2xl border border-slate-100 mb-3 text-xs font-bold">
                         <div className="text-emerald-600">
@@ -699,7 +957,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         </div>
                       </div>
 
-                      <p className="text-[11px] font-bold text-slate-500 italic bg-emerald-50/50 p-2.5 rounded-xl border border-emerald-100">
+                      <p className="text-[11px] font-bold text-slate-600 italic bg-emerald-50/60 p-3 rounded-xl border border-emerald-200/60 leading-relaxed">
                         ✨ ประเมินคุณภาพ: {q.difficulty.recommendation}
                       </p>
                     </div>
@@ -711,44 +969,19 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
             </div>
           </div>
 
-          {/* 📊 ความแม่นยำรายหัวข้อ Chart */}
-          {topicStats.length > 0 && (
-            <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm">
-              <h4 className="font-black text-xl text-slate-800 flex items-center gap-3 mb-6">
-                <BarChart3 className="text-indigo-500"/> สรุปสถิติความแม่นยำรายหน่วยการเรียนรู้/หัวข้อ (%)
-              </h4>
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topicStats} layout="vertical" margin={{ left: 40, right: 40 }}>
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9"/>
-                    <XAxis type="number" domain={[0, 100]} hide />
-                    <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 12, fontWeight: 'bold' }} />
-                    <Tooltip 
-                      cursor={{ fill: '#f8fafc' }}
-                      contentStyle={{ borderRadius: '20px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }}
-                    />
-                    <Bar dataKey="accuracy" radius={[0, 10, 10, 0]} barSize={26}>
-                      {topicStats.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.accuracy >= 70 ? '#10b981' : entry.accuracy >= 50 ? '#f59e0b' : '#f43f5e'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          )}
-
           {/* 📚 Detailed Item Analysis Table */}
           <div className="bg-white rounded-[40px] border border-slate-100 shadow-sm overflow-hidden">
-            <div className="p-6 bg-slate-50 border-b flex items-center justify-between">
+            <div className="p-6 bg-slate-50 border-b flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
               <div>
                 <h4 className="font-black text-xl text-slate-800 flex items-center gap-3">
-                  <BookOpen className="text-indigo-500"/> ตารางสรุปการจำแนกระดับความยากง่ายของข้อสอบทั้งหมด
+                  <BookOpen className="text-indigo-500"/> ตารางจำแนกระดับความยากง่ายของข้อสอบ (Facility Index p)
                 </h4>
-                <p className="text-xs font-bold text-slate-400 mt-1">ใช้ค่าดัชนีความยากง่าย (Facility Index p) ในการจัดระดับความยากง่ายของข้อสอบ</p>
+                <p className="text-xs font-bold text-slate-400 mt-1">
+                  {selectedTopic !== 'ALL' ? `แสดงเฉพาะข้อสอบในหน่วย: "${selectedTopic}"` : 'แสดงข้อสอบทั้งหมดในเงื่อนไขการค้นหา'}
+                </p>
               </div>
-              <button onClick={handleTriggerPrint} className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-black text-xs rounded-xl flex items-center gap-1.5 transition">
-                <Printer size={14}/> พิมพ์ตารางวิเคราะห์
+              <button onClick={handleTriggerPrint} className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-black text-xs rounded-2xl flex items-center gap-2 transition shadow-md">
+                <Printer size={16}/> พิมพ์ตารางวิเคราะห์
               </button>
             </div>
 
@@ -757,7 +990,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 <thead className="bg-white text-slate-400 font-black border-b uppercase tracking-widest text-[10px]">
                   <tr>
                     <th className="p-4 text-center">ข้อที่</th>
-                    <th className="p-4">โจทย์ข้อสอบ / หน่วย</th>
+                    <th className="p-4">โจทย์ข้อสอบ / หน่วยการเรียนรู้</th>
                     <th className="p-4 text-center">คนตอบถูก</th>
                     <th className="p-4 text-center">คนตอบผิด</th>
                     <th className="p-4 text-center">% ความถูกต้อง (p)</th>
@@ -771,7 +1004,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                       <td className="p-4 text-center font-black text-slate-400">{i + 1}</td>
                       <td className="p-4 max-w-xs">
                         <div className="font-black text-slate-800 text-sm line-clamp-2">{q.text}</div>
-                        <div className="text-[10px] text-indigo-500 font-bold mt-0.5">{q.unit}</div>
+                        <div className="text-[10px] text-indigo-500 font-bold mt-0.5">[{q.unit}]</div>
                       </td>
                       <td className="p-4 text-center font-black text-emerald-600">{q.correctCount} คน</td>
                       <td className="p-4 text-center font-black text-rose-600">{q.missedCount} คน</td>
@@ -809,7 +1042,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 <GraduationCap className="text-indigo-600"/> ตารางแสดงผลคะแนนของนักเรียนรายบุคคล
               </h4>
               <p className="text-xs font-bold text-slate-400 mt-1">
-                พิจารณาเฉพาะนักเรียนในห้องเรียนที่สอน ({filteredStats.length} รายการผลสอบ)
+                {selectedTopic !== 'ALL' ? `แสดงคะแนนเฉพาะหน่วยการเรียนรู้: "${selectedTopic}"` : `พิจารณาตามห้องเรียนที่คุณครูสอน (${filteredStats.length} รายการผลสอบ)`}
               </p>
             </div>
             <button onClick={handleTriggerPrint} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-2xl flex items-center gap-2 transition shadow-md">
@@ -837,7 +1070,31 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                   const stName = st ? st.name : (r.studentName || `นักเรียน ID: ${r.studentId}`);
                   const stRoom = st ? `${GRADE_LABELS[st.grade || ''] || st.grade}/${st.classroom}` : '-';
                   const cat = getResultCategory(r);
-                  const pct = Math.round((r.score / (r.totalQuestions || 1)) * 100);
+                  
+                  let scoreVal = r.score;
+                  let totalVal = r.totalQuestions || 1;
+
+                  if (selectedTopic !== 'ALL') {
+                    const detailsArray = typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
+                    if (Array.isArray(detailsArray)) {
+                      let topicScore = 0;
+                      let topicTotal = 0;
+                      detailsArray.forEach((det: any) => {
+                        const q = questions.find(q => String(q.id).trim() === String(det.questionId).trim());
+                        const unitName = q?.unit || det.topic;
+                        if (unitName?.trim() === selectedTopic.trim() || det.topic?.trim() === selectedTopic.trim()) {
+                          topicTotal += 1;
+                          if (det.isCorrect) topicScore += 1;
+                        }
+                      });
+                      if (topicTotal > 0) {
+                        scoreVal = topicScore;
+                        totalVal = topicTotal;
+                      }
+                    }
+                  }
+
+                  const pct = Math.round((scoreVal / totalVal) * 100);
                   const isPass = pct >= 50;
 
                   return (
@@ -854,6 +1111,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                       <td className="p-4 text-center font-black text-slate-600">{stRoom}</td>
                       <td className="p-4">
                         <div className="font-black text-slate-800">{r.subject}</div>
+                        {selectedTopic !== 'ALL' && <div className="text-[10px] text-emerald-600 font-bold">หน่วย: {selectedTopic}</div>}
                       </td>
                       <td className="p-4 text-center">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black border ${cat === 'UNIT_TEST' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : cat === 'MIDTERM' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
@@ -861,7 +1119,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         </span>
                       </td>
                       <td className="p-4 text-center font-black text-slate-900 text-sm">
-                        {r.score} / {r.totalQuestions}
+                        {scoreVal} / {totalVal}
                       </td>
                       <td className="p-4 text-center font-black text-indigo-600 text-sm">
                         {pct}%
@@ -890,7 +1148,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
         </div>
       )}
 
-      {/* 🖨️ Printable Document Modal (Rendered cleanly for printing) */}
+      {/* 🖨️ Printable Document Modal */}
       {showPrintModal && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 font-prompt overflow-y-auto">
           <style>{`
@@ -942,7 +1200,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
             {/* Print action controls inside modal */}
             <div className="flex items-center justify-between pb-4 border-b print:hidden">
               <div>
-                <h3 className="font-black text-lg text-slate-800">ตัวอย่างรายงานสรุปผลการวิเคราะห์ข้อสอบ</h3>
+                <h3 className="font-black text-lg text-slate-800">รายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบเฉพาะเจาะจง</h3>
                 <p className="text-xs text-slate-400 font-bold">กดปุ่ม "พิมพ์เอกสาร" เพื่อส่งพิมพ์ออกทางเครื่องพิมพ์หรือเซฟเป็น PDF</p>
               </div>
               <div className="flex gap-3">
@@ -960,14 +1218,16 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               {/* Header */}
               <div className="text-center space-y-1 pb-4 border-b-2 border-slate-900">
                 <h2 className="text-xl font-bold tracking-tight">แบบรายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบและผลสัมฤทธิ์ทางการเรียน</h2>
-                <h3 className="text-sm font-semibold">
+                <h3 className="text-sm font-semibold text-indigo-900">
                   โรงเรียน{teacher?.school || 'ประถมศึกษา'} • ภาคเรียนการศึกษาปัจจุบัน
                 </h3>
-                <div className="flex justify-center gap-6 text-xs text-slate-700 pt-2 font-medium">
+                <div className="bg-slate-100 p-2 rounded-lg my-2 font-bold text-xs text-slate-800">
+                  📌 {getSpecificSelectionTitle()}
+                </div>
+                <div className="flex justify-center gap-6 text-xs text-slate-700 pt-1 font-medium">
                   <span><strong>ครูผู้สอน:</strong> {teacher?.name || 'ครูผู้สอนประจำวิชา'}</span>
                   <span><strong>รายวิชา:</strong> {selectedSubject === 'ALL' ? 'ทุกรายวิชา' : selectedSubject}</span>
                   <span><strong>ระดับชั้น/ห้อง:</strong> {selectedClassroom === 'ALL' ? 'ห้องเรียนที่สอน' : selectedClassroom}</span>
-                  <span><strong>ประเภทการสอบ:</strong> {selectedCategory === 'ALL' ? 'รวมทุกประเภท' : selectedCategory === 'UNIT_TEST' ? 'หน่วยการเรียนรู้' : selectedCategory === 'MIDTERM' ? 'สอบกลางภาค' : 'สอบปลายภาค'}</span>
                 </div>
               </div>
 
@@ -1005,12 +1265,12 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                   <thead>
                     <tr className="bg-slate-100 text-center">
                       <th className="border border-slate-400 p-1.5 w-10">ข้อที่</th>
-                      <th className="border border-slate-400 p-1.5">ข้อความโจทย์ข้อสอบ / หน่วย</th>
+                      <th className="border border-slate-400 p-1.5">โจทย์ข้อสอบ / หน่วยการเรียนรู้</th>
                       <th className="border border-slate-400 p-1.5 w-16">คนตอบถูก</th>
                       <th className="border border-slate-400 p-1.5 w-16">คนตอบผิด</th>
                       <th className="border border-slate-400 p-1.5 w-20">% ความถูกต้อง (p)</th>
                       <th className="border border-slate-400 p-1.5 w-24">ระดับความยากง่าย</th>
-                      <th className="border border-slate-400 p-1.5">ข้อเสนอแนะในการจัดการเรียนการสอน</th>
+                      <th className="border border-slate-400 p-1.5">แนวทางการปรับปรุงการจัดการเรียนการสอน</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1031,7 +1291,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                     {itemAnalysisData.all.length === 0 && (
                       <tr>
                         <td colSpan={7} className="border border-slate-400 p-4 text-center italic text-slate-500">
-                          ไม่มีข้อมูลวิเคราะห์รายข้อ
+                          ไม่มีข้อมูลวิเคราะห์รายข้อในหัวข้อที่เลือก
                         </td>
                       </tr>
                     )}
