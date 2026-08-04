@@ -3,7 +3,7 @@ import { ExamResult, Question, Student, SubjectConfig, Teacher, Assignment } fro
 import { 
   Target, BarChart3, AlertCircle, CheckCircle2, BookOpen,
   Printer, Search, Award, Users, GraduationCap,
-  Sparkles, FileText, Layers, Filter, RotateCcw
+  Sparkles, FileText, Layers, Filter, RotateCcw, X
 } from 'lucide-react';
 
 interface TeacherAnalyticsProps {
@@ -1150,9 +1150,12 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
       {/* 🖨️ Printable Document Modal */}
       {showPrintModal && (
-        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 font-prompt overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/80 z-[100] flex items-center justify-center p-2 sm:p-4 font-prompt animate-fade-in">
           <style>{`
             @media print {
+              #root {
+                display: none !important;
+              }
               html, body {
                 margin: 0 !important;
                 padding: 0 !important;
@@ -1160,12 +1163,6 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 color: black !important;
                 height: auto !important;
                 overflow: visible !important;
-              }
-              body * {
-                visibility: hidden !important;
-              }
-              .print-modal-container, .print-modal-container * {
-                visibility: visible !important;
               }
               .fixed.inset-0 {
                 position: static !important;
@@ -1219,47 +1216,49 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               }
             }
           `}</style>
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-8 space-y-6 shadow-2xl relative border-t-8 border-indigo-600 print-modal-container my-8">
-            <button 
-              onClick={() => setShowPrintModal(false)}
-              className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition print:hidden"
-            >
-              ✕
-            </button>
-
-            {/* Print action controls inside modal */}
-            <div className="flex items-center justify-between pb-4 border-b print:hidden">
+          <div className="bg-white rounded-3xl max-w-4xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh] border-t-8 border-indigo-600 print-modal-container my-auto relative">
+            
+            {/* Top Action Header Bar */}
+            <div className="shrink-0 bg-slate-50 border-b border-slate-200 p-4 sm:p-5 flex items-center justify-between gap-4 print:hidden">
               <div>
-                <h3 className="font-black text-lg text-slate-800">รายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบและคะแนนนักเรียน</h3>
-                <p className="text-xs text-slate-400 font-bold">กดปุ่ม "พิมพ์เอกสาร" เพื่อส่งพิมพ์ออกทางเครื่องพิมพ์หรือเซฟเป็น PDF</p>
+                <h3 className="font-black text-base sm:text-lg text-slate-800">รายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบและคะแนนนักเรียน</h3>
+                <p className="text-xs text-slate-500 font-bold">กดปุ่ม "พิมพ์เอกสาร / บันทึก PDF" เพื่อส่งพิมพ์ออกทางเครื่องพิมพ์หรือเซฟเป็นไฟล์ PDF</p>
               </div>
-              <div className="flex gap-3">
+              <div className="flex items-center gap-2 shrink-0">
                 <button 
                   onClick={() => window.print()}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-xl flex items-center gap-2 shadow-md"
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-xs rounded-xl flex items-center gap-2 shadow-md transition"
                 >
-                  <Printer size={16}/> พิมพ์เอกสาร / บันทึก PDF
+                  <Printer size={18}/> พิมพ์เอกสาร / บันทึก PDF
+                </button>
+                <button 
+                  onClick={() => setShowPrintModal(false)}
+                  className="p-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl transition"
+                  title="ปิดหน้าต่าง"
+                >
+                  <X size={20}/>
                 </button>
               </div>
             </div>
 
-            {/* Printable Content Area */}
-            <div className="printable-report space-y-6 text-slate-900 text-xs font-sarabun p-4 bg-white">
-              {/* Header */}
-              <div className="text-center space-y-1 pb-4 border-b-2 border-slate-900">
-                <h2 className="text-xl font-bold tracking-tight">แบบรายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบและผลสัมฤทธิ์ทางการเรียน</h2>
-                <h3 className="text-sm font-semibold text-indigo-900">
-                  โรงเรียน{teacher?.school || 'ประถมศึกษา'} • ภาคเรียนการศึกษาปัจจุบัน
-                </h3>
-                <div className="bg-slate-100 p-2 rounded-lg my-2 font-bold text-xs text-slate-800">
-                  📌 {getSpecificSelectionTitle()}
+            {/* Scrollable Printable Content Area */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-8 bg-slate-100 custom-scrollbar">
+              <div className="printable-report space-y-6 text-slate-900 text-xs font-sarabun p-6 sm:p-8 bg-white rounded-2xl shadow-sm border border-slate-200/60 max-w-3xl mx-auto">
+                {/* Header */}
+                <div className="text-center space-y-1 pb-4 border-b-2 border-slate-900">
+                  <h2 className="text-xl font-bold tracking-tight">แบบรายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบและผลสัมฤทธิ์ทางการเรียน</h2>
+                  <h3 className="text-sm font-semibold text-indigo-900">
+                    โรงเรียน{teacher?.school || 'ประถมศึกษา'} • ภาคเรียนการศึกษาปัจจุบัน
+                  </h3>
+                  <div className="bg-slate-100 p-2 rounded-lg my-2 font-bold text-xs text-slate-800">
+                    📌 {getSpecificSelectionTitle()}
+                  </div>
+                  <div className="flex justify-center gap-6 text-xs text-slate-700 pt-1 font-medium">
+                    <span><strong>ครูผู้สอน:</strong> {teacher?.name || 'ครูผู้สอนประจำวิชา'}</span>
+                    <span><strong>รายวิชา:</strong> {selectedSubject === 'ALL' ? 'ทุกรายวิชา' : selectedSubject}</span>
+                    <span><strong>ระดับชั้น/ห้อง:</strong> {selectedClassroom === 'ALL' ? 'ห้องเรียนที่สอน' : selectedClassroom}</span>
+                  </div>
                 </div>
-                <div className="flex justify-center gap-6 text-xs text-slate-700 pt-1 font-medium">
-                  <span><strong>ครูผู้สอน:</strong> {teacher?.name || 'ครูผู้สอนประจำวิชา'}</span>
-                  <span><strong>รายวิชา:</strong> {selectedSubject === 'ALL' ? 'ทุกรายวิชา' : selectedSubject}</span>
-                  <span><strong>ระดับชั้น/ห้อง:</strong> {selectedClassroom === 'ALL' ? 'ห้องเรียนที่สอน' : selectedClassroom}</span>
-                </div>
-              </div>
 
               {/* 📊 Part 1: Summary KPI Table */}
               <div>
@@ -1433,8 +1432,28 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               </div>
             </div>
           </div>
+
+          {/* Bottom Action Footer Bar */}
+          <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0 print:hidden">
+            <p className="text-xs text-slate-500 font-bold hidden sm:block">💡 คำแนะนำ: เลือกปลายทางเป็น "Save as PDF" หรือเลือกชื่อเครื่องพิมพ์</p>
+            <div className="flex gap-2 w-full sm:w-auto justify-end">
+              <button 
+                onClick={() => window.print()}
+                className="flex-1 sm:flex-none px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-md transition"
+              >
+                <Printer size={18}/> พิมพ์เอกสาร / บันทึก PDF
+              </button>
+              <button 
+                onClick={() => setShowPrintModal(false)}
+                className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+          </div>
         </div>
-      )}
+      </div>
+    )}
     </div>
   );
 };
