@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Student, ExamResult, SubjectConfig, Teacher, Classroom, Question } from '../../types';
+import { Student, ExamResult, SubjectConfig, Teacher, Classroom, Question, Assignment } from '../../types';
 import { 
   BarChart2, GraduationCap, 
   X, Users, ChevronRight, Trophy, Target, 
@@ -20,7 +20,8 @@ interface StatsViewerProps {
   myGrades: string[];
   teacher: Teacher; 
   onRefresh: () => void;
-  questions?: Question[]; // Added questions prop
+  questions?: Question[];
+  assignments?: Assignment[];
 }
 
 const GRADES = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'M1', 'M2', 'M3'];
@@ -29,8 +30,18 @@ const GRADE_LABELS: Record<string, string> = {
     'M1': 'ม.1', 'M2': 'ม.2', 'M3': 'ม.3', 'ALL': 'ทุกชั้น' 
 };
 
-const StatsViewer: React.FC<StatsViewerProps> = ({ students, stats, canManageAll, myGrades, teacher, questions = [] }) => {
-  const [statsSubTab, setStatsSubTab] = useState<'INDIVIDUAL' | 'TOPIC'>('INDIVIDUAL');
+const StatsViewer: React.FC<StatsViewerProps> = ({ 
+  students, 
+  stats, 
+  availableSubjects,
+  canManageAll, 
+  myGrades, 
+  teacher, 
+  onRefresh: _onRefresh,
+  questions = [],
+  assignments = []
+}) => {
+  const [statsSubTab, setStatsSubTab] = useState<'INDIVIDUAL' | 'TOPIC'>('TOPIC');
   const [viewLevel, setViewLevel] = useState<'GRADE' | 'ROOM' | 'LIST'>('GRADE');
   const [selectedGrade, setSelectedGrade] = useState<string | null>(null);
   const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
@@ -146,7 +157,15 @@ const StatsViewer: React.FC<StatsViewerProps> = ({ students, stats, canManageAll
         </div>
 
         {statsSubTab === 'TOPIC' ? (
-            <TeacherAnalytics stats={stats} questions={allQuestions} />
+            <TeacherAnalytics 
+                stats={stats} 
+                questions={allQuestions} 
+                students={students}
+                availableSubjects={availableSubjects}
+                teacher={teacher}
+                canManageAll={canManageAll}
+                assignments={assignments}
+            />
         ) : (
             <>
                 <div className="flex items-center gap-2 mb-8 bg-white p-3 rounded-2xl border border-slate-100 shadow-sm w-fit">

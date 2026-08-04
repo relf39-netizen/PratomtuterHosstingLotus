@@ -418,7 +418,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                 {/* Fix: Changed loadInitialData to loadData */}
                 {activeTab === 'assignments' && <AssignmentManager assignments={assignments} subjects={availableSubjects} students={students} stats={stats} teacher={teacher} onRefresh={loadData}/>}
                 {/* Fix: Changed loadInitialData to loadData */}
-                {activeTab === 'stats' && <StatsViewer students={students} stats={stats} availableSubjects={availableSubjects} canManageAll={canManageAll} myGrades={GRADES} teacher={teacher} onRefresh={loadData} />}
+                {activeTab === 'stats' && <StatsViewer students={students} stats={stats} availableSubjects={availableSubjects} canManageAll={canManageAll} myGrades={GRADES} teacher={teacher} assignments={assignments} onRefresh={loadData} />}
 
                 {activeTab === 'school-settings' && (
                     <div className="animate-fade-in max-w-6xl mx-auto">
