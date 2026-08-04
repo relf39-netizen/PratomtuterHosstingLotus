@@ -696,7 +696,21 @@ app.post('/api', async (req, res) => {
 
         case 'getQuestionsBySubjectAndGrade': {
           const { subject, grade, school } = args;
-          const rows = await query('SELECT * FROM questions WHERE subject = ? AND grade = ? AND school = ?', [subject, grade, school]);
+          let sql = 'SELECT * FROM questions WHERE 1=1';
+          const params: any[] = [];
+          if (subject && subject !== 'ALL') {
+            sql += ' AND subject = ?';
+            params.push(subject);
+          }
+          if (grade && grade !== 'ALL') {
+            sql += ' AND grade = ?';
+            params.push(grade);
+          }
+          if (school && school !== 'ALL') {
+            sql += ' AND school = ?';
+            params.push(school);
+          }
+          const rows = await query(sql, params);
           return res.json({ data: rows });
         }
 
@@ -1859,7 +1873,12 @@ app.post('/api', async (req, res) => {
 
       case 'getQuestionsBySubjectAndGrade': {
         const { subject, grade, school } = args;
-        const rows = db.questions.filter((q: any) => q.subject === subject && q.grade === grade && String(q.school).trim().toLowerCase() === String(school).trim().toLowerCase());
+        const rows = db.questions.filter((q: any) => {
+          if (subject && subject !== 'ALL' && q.subject !== subject) return false;
+          if (grade && grade !== 'ALL' && q.grade !== grade) return false;
+          if (school && school !== 'ALL' && String(q.school || '').trim().toLowerCase() !== String(school || '').trim().toLowerCase()) return false;
+          return true;
+        });
         return res.json({ data: rows });
       }
 

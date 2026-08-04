@@ -337,13 +337,18 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     }> = {};
 
     filteredStats.forEach(res => {
-      if (res.details && Array.isArray(res.details)) {
-        res.details.forEach(det => {
-          if (!qMap[det.questionId]) {
-            const q = questions.find(q => String(q.id) === String(det.questionId));
-            qMap[det.questionId] = {
-              id: det.questionId,
-              text: q ? q.text : 'ไม่พบข้อมูลโจทย์ข้อสอบ',
+      const detailsArray = typeof res.details === 'string' ? JSON.parse(res.details) : res.details;
+      if (detailsArray && Array.isArray(detailsArray)) {
+        detailsArray.forEach(det => {
+          if (!det || !det.questionId) return;
+          const qIdStr = String(det.questionId).trim();
+
+          if (!qMap[qIdStr]) {
+            const q = questions.find(q => String(q.id).trim() === qIdStr);
+            const foundText = q?.text || det.questionText || det.text || det.question || 'ไม่พบข้อมูลโจทย์ข้อสอบ';
+            qMap[qIdStr] = {
+              id: qIdStr,
+              text: foundText,
               unit: q?.unit || det.topic || 'หน่วยทั่วไป',
               choices: q?.choices || [],
               correctChoiceId: q?.correctChoiceId || '',
@@ -351,12 +356,19 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               missedCount: 0,
               totalCount: 0
             };
+          } else if (qMap[qIdStr].text === 'ไม่พบข้อมูลโจทย์ข้อสอบ') {
+            const q = questions.find(q => String(q.id).trim() === qIdStr);
+            const foundText = q?.text || det.questionText || det.text || det.question;
+            if (foundText) {
+              qMap[qIdStr].text = foundText;
+            }
           }
-          qMap[det.questionId].totalCount += 1;
+
+          qMap[qIdStr].totalCount += 1;
           if (det.isCorrect) {
-            qMap[det.questionId].correctCount += 1;
+            qMap[qIdStr].correctCount += 1;
           } else {
-            qMap[det.questionId].missedCount += 1;
+            qMap[qIdStr].missedCount += 1;
           }
         });
       }
@@ -881,6 +893,44 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       {/* 🖨️ Printable Document Modal (Rendered cleanly for printing) */}
       {showPrintModal && (
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 font-prompt overflow-y-auto">
+          <style>{`
+            @media print {
+              body * {
+                visibility: hidden !important;
+              }
+              .print-modal-container, .print-modal-container * {
+                visibility: visible !important;
+              }
+              .print-modal-container {
+                position: absolute !important;
+                left: 0 !important;
+                top: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                background: white !important;
+                color: black !important;
+              }
+              .printable-report {
+                width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                background: white !important;
+                color: black !important;
+              }
+              .print\\:hidden {
+                display: none !important;
+              }
+              @page {
+                size: A4 portrait;
+                margin: 15mm;
+              }
+            }
+          `}</style>
           <div className="bg-white rounded-3xl max-w-4xl w-full p-8 space-y-6 shadow-2xl relative border-t-8 border-indigo-600 print-modal-container my-8">
             <button 
               onClick={() => setShowPrintModal(false)}

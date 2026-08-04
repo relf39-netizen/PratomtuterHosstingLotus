@@ -89,7 +89,8 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
         questionId: currentQuestion.id,
         selectedChoiceId: String(selectedChoice),
         isCorrect: isCorrect,
-        topic: currentQuestion.unit || currentQuestion.subject
+        topic: currentQuestion.unit || currentQuestion.subject,
+        questionText: currentQuestion.text
     }]);
 
     setIsSubmitted(true);

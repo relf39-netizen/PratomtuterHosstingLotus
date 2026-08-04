@@ -101,6 +101,7 @@ export interface ExamResultDetail {
   selectedChoiceId: string;
   isCorrect: boolean;
   topic?: string; // unit or subject area
+  questionText?: string;
 }
 
 export interface ExamResult {
