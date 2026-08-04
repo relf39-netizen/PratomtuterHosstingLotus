@@ -1153,16 +1153,31 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
         <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 font-prompt overflow-y-auto">
           <style>{`
             @media print {
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: white !important;
+                color: black !important;
+                height: auto !important;
+                overflow: visible !important;
+              }
               body * {
                 visibility: hidden !important;
               }
               .print-modal-container, .print-modal-container * {
                 visibility: visible !important;
               }
+              .fixed.inset-0 {
+                position: static !important;
+                display: block !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                background: transparent !important;
+                height: auto !important;
+                overflow: visible !important;
+              }
               .print-modal-container {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
+                position: static !important;
                 width: 100% !important;
                 max-width: 100% !important;
                 margin: 0 !important;
@@ -1180,12 +1195,27 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 background: white !important;
                 color: black !important;
               }
+              thead {
+                display: table-header-group !important;
+              }
+              tbody {
+                display: table-row-group !important;
+              }
+              tr {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+              table {
+                page-break-inside: auto !important;
+                width: 100% !important;
+                border-collapse: collapse !important;
+              }
               .print\\:hidden {
                 display: none !important;
               }
               @page {
                 size: A4 portrait;
-                margin: 15mm;
+                margin: 12mm 10mm 12mm 10mm;
               }
             }
           `}</style>
@@ -1200,7 +1230,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
             {/* Print action controls inside modal */}
             <div className="flex items-center justify-between pb-4 border-b print:hidden">
               <div>
-                <h3 className="font-black text-lg text-slate-800">รายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบเฉพาะเจาะจง</h3>
+                <h3 className="font-black text-lg text-slate-800">รายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบและคะแนนนักเรียน</h3>
                 <p className="text-xs text-slate-400 font-bold">กดปุ่ม "พิมพ์เอกสาร" เพื่อส่งพิมพ์ออกทางเครื่องพิมพ์หรือเซฟเป็น PDF</p>
               </div>
               <div className="flex gap-3">
@@ -1292,6 +1322,93 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                       <tr>
                         <td colSpan={7} className="border border-slate-400 p-4 text-center italic text-slate-500">
                           ไม่มีข้อมูลวิเคราะห์รายข้อในหัวข้อที่เลือก
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* 📋 Part 3: Student Score Records Table for Academic Record / Evidence */}
+              <div>
+                <h4 className="font-bold text-sm mb-2 text-slate-800">ส่วนที่ 3: ตารางบันทึกผลคะแนนสอบและผลสัมฤทธิ์ทางการเรียนรายบุคคล (สำหรับเก็บหลักฐานทางการศึกษา)</h4>
+                <table className="w-full border-collapse border border-slate-400 text-xs">
+                  <thead>
+                    <tr className="bg-slate-100 text-center">
+                      <th className="border border-slate-400 p-1.5 w-10">ลำดับ</th>
+                      <th className="border border-slate-400 p-1.5">นักเรียน (ชื่อ-นามสกุล / รหัส)</th>
+                      <th className="border border-slate-400 p-1.5 w-20">ชั้น/ห้อง</th>
+                      <th className="border border-slate-400 p-1.5">วิชา / ชุดแบบทดสอบ</th>
+                      <th className="border border-slate-400 p-1.5 w-20">ประเภท</th>
+                      <th className="border border-slate-400 p-1.5 w-20">คะแนนที่ได้</th>
+                      <th className="border border-slate-400 p-1.5 w-16">ร้อยละ (%)</th>
+                      <th className="border border-slate-400 p-1.5 w-20">ผลการประเมิน</th>
+                      <th className="border border-slate-400 p-1.5 w-24">วันที่ทำสอบ</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStats.map((r, idx) => {
+                      const st = students.find(s => String(s.id).trim() === String(r.studentId).trim());
+                      const stName = st ? st.name : (r.studentName || `นักเรียน ID: ${r.studentId}`);
+                      const stRoom = st ? `${GRADE_LABELS[st.grade || ''] || st.grade}/${st.classroom}` : '-';
+                      const cat = getResultCategory(r);
+
+                      let scoreVal = r.score;
+                      let totalVal = r.totalQuestions || 1;
+
+                      if (selectedTopic !== 'ALL') {
+                        const detailsArray = typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
+                        if (Array.isArray(detailsArray)) {
+                          let topicScore = 0;
+                          let topicTotal = 0;
+                          detailsArray.forEach((det: any) => {
+                            const q = questions.find(q => String(q.id).trim() === String(det.questionId).trim());
+                            const unitName = q?.unit || det.topic;
+                            if (unitName?.trim() === selectedTopic.trim() || det.topic?.trim() === selectedTopic.trim()) {
+                              topicTotal += 1;
+                              if (det.isCorrect) topicScore += 1;
+                            }
+                          });
+                          if (topicTotal > 0) {
+                            scoreVal = topicScore;
+                            totalVal = topicTotal;
+                          }
+                        }
+                      }
+
+                      const pct = Math.round((scoreVal / totalVal) * 100);
+                      const isPass = pct >= 50;
+
+                      return (
+                        <tr key={r.id || idx}>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{idx + 1}</td>
+                          <td className="border border-slate-400 p-1.5">
+                            <div className="font-bold text-slate-900">{stName}</div>
+                            <div className="text-[10px] text-slate-500">รหัส: {r.studentId}</div>
+                          </td>
+                          <td className="border border-slate-400 p-1.5 text-center font-medium">{stRoom}</td>
+                          <td className="border border-slate-400 p-1.5">
+                            <div className="font-medium">{r.subject}</div>
+                            {selectedTopic !== 'ALL' && <div className="text-[10px] text-slate-500">หน่วย: {selectedTopic}</div>}
+                          </td>
+                          <td className="border border-slate-400 p-1.5 text-center text-[10px] font-bold">
+                            {cat === 'UNIT_TEST' ? 'หน่วยเรียนรู้' : cat === 'MIDTERM' ? 'กลางภาค' : 'ปลายภาค'}
+                          </td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{scoreVal} / {totalVal}</td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{pct}%</td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">
+                            {isPass ? 'ผ่านเกณฑ์' : 'ควรพัฒนา'}
+                          </td>
+                          <td className="border border-slate-400 p-1.5 text-center text-[10px] text-slate-600">
+                            {formatThaiDate(r.timestamp)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {filteredStats.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="border border-slate-400 p-4 text-center italic text-slate-500">
+                          ไม่มีข้อมูลผลคะแนนรายบุคคลในเงื่อนไขที่เลือก
                         </td>
                       </tr>
                     )}

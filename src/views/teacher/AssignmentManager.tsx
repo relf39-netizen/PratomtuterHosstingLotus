@@ -63,6 +63,11 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
   const [printQuestions, setPrintQuestions] = useState<Question[]>([]);
   const [loadingPrint, setLoadingPrint] = useState(false);
   const [showAnswersInPrint, setShowAnswersInPrint] = useState(false);
+
+  // Item Analysis Print States
+  const [analysisAssignment, setAnalysisAssignment] = useState<Assignment | null>(null);
+  const [analysisQuestions, setAnalysisQuestions] = useState<Question[]>([]);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   
   // Form States (Combined into one page)
   const [assignTitle, setAssignTitle] = useState('');
@@ -765,6 +770,113 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
     }
   };
 
+  const getItemDifficultyInfo = (p: number) => {
+    if (p >= 0.80) {
+      return { level: 'ง่ายมาก', color: 'text-emerald-600', recommendation: 'ง่ายมาก ควรปรับเพิ่มความท้าทายในข้อสอบ' };
+    } else if (p >= 0.60) {
+      return { level: 'ง่าย', color: 'text-teal-600', recommendation: 'ค่อนข้างง่าย นักเรียนส่วนใหญ่เข้าใจ' };
+    } else if (p >= 0.40) {
+      return { level: 'ปานกลาง', color: 'text-indigo-600', recommendation: 'ความยากเหมาะสม สามารถจำแนกกลุ่มนักเรียนได้ดี' };
+    } else if (p >= 0.20) {
+      return { level: 'ยาก', color: 'text-amber-600', recommendation: 'ค่อนข้างยาก ควรทบทวนมโนทัศน์สำคัญในบทเรียนนี้ซ้ำ' };
+    } else {
+      return { level: 'ยากมาก', color: 'text-rose-600', recommendation: 'ยากมาก ควรจัดกิจกรรมสอนซ่อมเสริมและปรับสื่อการสอน' };
+    }
+  };
+
+  const handleOpenAnalysisPrint = async (a: Assignment) => {
+    setAnalysisAssignment(a);
+    setLoadingAnalysis(true);
+    setAnalysisQuestions([]);
+    try {
+      const qs = await getQuestionsByAssignment(a.id);
+      setAnalysisQuestions(qs);
+    } catch (err) {
+      console.error("Load analysis questions error:", err);
+    } finally {
+      setLoadingAnalysis(false);
+    }
+  };
+
+  const analysisStats = useMemo(() => {
+    if (!analysisAssignment) return { totalAttempts: 0, uniqueStudents: 0, avgPct: 0, maxPct: 0, minPct: 0, passCount: 0, passRate: 0, studentScores: [], itemAnalysis: [] };
+
+    const assignmentResults = stats.filter(s => String(s.assignmentId).trim() === String(analysisAssignment.id).trim());
+    const totalAttempts = assignmentResults.length;
+    const uniqueStudents = new Set(assignmentResults.map(s => String(s.studentId).trim())).size;
+
+    const totalQ = analysisAssignment.questionCount || (analysisQuestions.length > 0 ? analysisQuestions.length : 1);
+
+    const studentScores = assignmentResults.map(r => {
+      const st = students.find(s => String(s.id).trim() === String(r.studentId).trim());
+      const stName = st ? st.name : (r.studentName || `นักเรียน ID: ${r.studentId}`);
+      const stRoom = st ? `${GRADE_LABELS[st.grade || ''] || st.grade}/${st.classroom}` : '-';
+      const pct = Math.round((r.score / (r.totalQuestions || totalQ)) * 100);
+      return {
+        id: r.id,
+        studentId: r.studentId,
+        studentName: stName,
+        classroom: stRoom,
+        score: r.score,
+        total: r.totalQuestions || totalQ,
+        pct,
+        isPass: pct >= 50,
+        timestamp: r.timestamp
+      };
+    });
+
+    const avgPct = assignmentResults.length > 0 ? Math.round(studentScores.reduce((sum, s) => sum + s.pct, 0) / studentScores.length) : 0;
+    const maxPct = assignmentResults.length > 0 ? Math.max(...studentScores.map(s => s.pct), 0) : 0;
+    const minPct = assignmentResults.length > 0 ? Math.min(...studentScores.map(s => s.pct), 0) : 0;
+    const passCount = studentScores.filter(s => s.isPass).length;
+    const passRate = assignmentResults.length > 0 ? Math.round((passCount / studentScores.length) * 100) : 0;
+
+    const itemAnalysis = analysisQuestions.map((q, idx) => {
+      let correctCount = 0;
+      let missedCount = 0;
+
+      assignmentResults.forEach(r => {
+        const detailsArray = typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
+        if (Array.isArray(detailsArray)) {
+          const det = detailsArray.find((d: any) => String(d.questionId).trim() === String(q.id).trim() || d.questionIndex === idx);
+          if (det) {
+            if (det.isCorrect) correctCount++;
+            else missedCount++;
+          }
+        }
+      });
+
+      const totalResp = correctCount + missedCount;
+      const p = totalResp > 0 ? correctCount / totalResp : 0.5;
+      const pPct = Math.round(p * 100);
+      const difficulty = getItemDifficultyInfo(p);
+
+      return {
+        id: q.id,
+        index: idx + 1,
+        text: q.text,
+        unit: q.unit || analysisAssignment?.title || 'เนื้อหาหลัก',
+        correctCount,
+        missedCount,
+        p,
+        pPct,
+        difficulty
+      };
+    });
+
+    return {
+      totalAttempts,
+      uniqueStudents,
+      avgPct,
+      maxPct,
+      minPct,
+      passCount,
+      passRate,
+      studentScores,
+      itemAnalysis
+    };
+  }, [analysisAssignment, analysisQuestions, stats, students]);
+
   const handleOpenPrintPreview = async (a: Assignment) => {
     setPrintAssignment(a);
     setLoadingPrint(true);
@@ -1331,29 +1443,41 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                         </button>
 
                                         {/* Utility Buttons */}
-                                        <div className="flex gap-2">
-                                            <button 
-                                                type="button"
-                                                onClick={() => handleOpenPrintPreview(a)} 
-                                                className="flex-1 bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-700 py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border border-amber-200 transition shadow-sm"
-                                                title="พิมพ์แบบทดสอบกระดาษ"
-                                            >
-                                                <Printer size={16}/> พิมพ์แบบทดสอบ
-                                            </button>
-                                            <button 
-                                                onClick={() => handleOpenDetail(a)} 
-                                                className="p-3 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 rounded-2xl border border-indigo-100 transition shadow-sm"
-                                                title="ดูรายละเอียดผลสอบ"
-                                            >
-                                                <Eye size={18}/>
-                                            </button>
-                                            <button 
-                                                onClick={async () => { if(confirm('ยืนยันลบแบบทดสอบหน่วยการเรียนรู้นี้?')) { await deleteAssignment(a.id); onRefresh(); } }} 
-                                                className="p-3 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-500 rounded-2xl border border-rose-100 transition shadow-sm"
-                                                title="ลบ"
-                                            >
-                                                <Trash2 size={18}/>
-                                            </button>
+                                        <div className="space-y-2">
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleOpenPrintPreview(a)} 
+                                                    className="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-700 py-2.5 px-2 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border border-amber-200 transition shadow-sm"
+                                                    title="พิมพ์แบบทดสอบกระดาษ"
+                                                >
+                                                    <Printer size={15}/> พิมพ์ข้อสอบ
+                                                </button>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleOpenAnalysisPrint(a)} 
+                                                    className="bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 py-2.5 px-2 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border border-indigo-200 transition shadow-sm"
+                                                    title="พิมพ์รายงานวิเคราะห์ข้อสอบและคะแนนนักเรียน"
+                                                >
+                                                    <BarChart3 size={15}/> พิมพ์วิเคราะห์ข้อสอบ
+                                                </button>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={() => handleOpenDetail(a)} 
+                                                    className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition"
+                                                    title="ดูรายละเอียดผลสอบ"
+                                                >
+                                                    <Eye size={15}/> ดูคะแนนสอบ
+                                                </button>
+                                                <button 
+                                                    onClick={async () => { if(confirm('ยืนยันลบแบบทดสอบหน่วยการเรียนรู้นี้?')) { await deleteAssignment(a.id); onRefresh(); } }} 
+                                                    className="p-2 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-500 rounded-xl border border-rose-100 transition shadow-sm"
+                                                    title="ลบ"
+                                                >
+                                                    <Trash2 size={15}/>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1407,9 +1531,10 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                             </div>
                                         </td>
                                         <td className="p-8 text-right">
-                                            <div className="flex justify-end gap-3">
-                                                <button onClick={() => handleOpenDetail(a)} className="bg-indigo-50 text-indigo-600 p-3.5 rounded-2xl hover:bg-indigo-600 hover:text-white transition shadow-sm border border-indigo-100"><Eye size={22}/></button>
-                                                <button onClick={async () => { if(confirm('ยืนยันลบชุดการบ้านนี้?')) { await deleteAssignment(a.id); onRefresh(); } }} className="bg-red-50 text-red-500 p-3.5 rounded-2xl hover:bg-red-500 hover:text-white transition shadow-sm border border-red-100"><Trash2 size={22}/></button>
+                                            <div className="flex justify-end gap-2 items-center">
+                                                <button onClick={() => handleOpenAnalysisPrint(a)} className="bg-indigo-50 text-indigo-700 px-3 py-2 rounded-xl hover:bg-indigo-600 hover:text-white transition shadow-sm border border-indigo-100 flex items-center gap-1.5 text-xs font-bold" title="พิมพ์วิเคราะห์ข้อสอบและคะแนน"><BarChart3 size={16}/> พิมพ์วิเคราะห์ข้อสอบ</button>
+                                                <button onClick={() => handleOpenDetail(a)} className="bg-slate-100 text-slate-700 p-2.5 rounded-xl hover:bg-slate-200 transition shadow-sm" title="ดูรายละเอียดคะแนน"><Eye size={18}/></button>
+                                                <button onClick={async () => { if(confirm('ยืนยันลบชุดการบ้านนี้?')) { await deleteAssignment(a.id); onRefresh(); } }} className="bg-rose-50 text-rose-500 p-2.5 rounded-xl hover:bg-rose-500 hover:text-white transition shadow-sm border border-rose-100" title="ลบ"><Trash2 size={18}/></button>
                                             </div>
                                         </td>
                                     </tr>
@@ -1547,29 +1672,41 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                             )}
                                         </button>
 
-                                        <div className="flex gap-2">
-                                            <button 
-                                                type="button"
-                                                onClick={() => handleOpenPrintPreview(a)} 
-                                                className="flex-1 bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-700 py-3 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border border-amber-200 transition shadow-sm"
-                                                title="พิมพ์ข้อสอบกระดาษ"
-                                            >
-                                                <Printer size={16}/> พิมพ์ข้อสอบ
-                                            </button>
-                                            <button 
-                                                onClick={() => handleOpenDetail(a)} 
-                                                className="p-3 bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-600 rounded-2xl border border-indigo-100 transition shadow-sm"
-                                                title="ดูรายละเอียดการสอบ"
-                                            >
-                                                <Eye size={18}/>
-                                            </button>
-                                            <button 
-                                                onClick={async () => { if(confirm('ยืนยันลบชุดข้อสอบนี้?')) { await deleteAssignment(a.id); onRefresh(); } }} 
-                                                className="p-3 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-500 rounded-2xl border border-rose-100 transition shadow-sm"
-                                                title="ลบ"
-                                            >
-                                                <Trash2 size={18}/>
-                                            </button>
+                                        <div className="space-y-2">
+                                            <div className="grid grid-cols-2 gap-2">
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleOpenPrintPreview(a)} 
+                                                    className="bg-amber-50 hover:bg-amber-500 hover:text-white text-amber-700 py-2.5 px-2 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border border-amber-200 transition shadow-sm"
+                                                    title="พิมพ์ข้อสอบกระดาษ"
+                                                >
+                                                    <Printer size={15}/> พิมพ์ข้อสอบ
+                                                </button>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => handleOpenAnalysisPrint(a)} 
+                                                    className="bg-indigo-50 hover:bg-indigo-600 hover:text-white text-indigo-700 py-2.5 px-2 rounded-2xl font-black text-xs flex items-center justify-center gap-1.5 border border-indigo-200 transition shadow-sm"
+                                                    title="พิมพ์รายงานวิเคราะห์ข้อสอบและคะแนนนักเรียน"
+                                                >
+                                                    <BarChart3 size={15}/> พิมพ์วิเคราะห์ข้อสอบ
+                                                </button>
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={() => handleOpenDetail(a)} 
+                                                    className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition"
+                                                    title="ดูรายละเอียดการสอบ"
+                                                >
+                                                    <Eye size={15}/> ดูคะแนนสอบ
+                                                </button>
+                                                <button 
+                                                    onClick={async () => { if(confirm('ยืนยันลบชุดข้อสอบนี้?')) { await deleteAssignment(a.id); onRefresh(); } }} 
+                                                    className="p-2 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-500 rounded-xl border border-rose-100 transition shadow-sm"
+                                                    title="ลบ"
+                                                >
+                                                    <Trash2 size={15}/>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -2210,6 +2347,257 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                 </div>
             </div>
         , document.body)}
+
+      {/* 🖨️ Item Analysis & Student Scores Print Modal */}
+      {analysisAssignment && createPortal(
+        <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 font-prompt overflow-y-auto">
+          <style>{`
+            @media print {
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: white !important;
+                color: black !important;
+                height: auto !important;
+                overflow: visible !important;
+              }
+              body * {
+                visibility: hidden !important;
+              }
+              .print-analysis-container, .print-analysis-container * {
+                visibility: visible !important;
+              }
+              .fixed.inset-0 {
+                position: static !important;
+                display: block !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                background: transparent !important;
+                height: auto !important;
+                overflow: visible !important;
+              }
+              .print-analysis-container {
+                position: static !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border: none !important;
+                border-radius: 0 !important;
+                box-shadow: none !important;
+                background: white !important;
+                color: black !important;
+              }
+              .printable-analysis-report {
+                width: 100% !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                background: white !important;
+                color: black !important;
+              }
+              thead {
+                display: table-header-group !important;
+              }
+              tbody {
+                display: table-row-group !important;
+              }
+              tr {
+                page-break-inside: avoid !important;
+                break-inside: avoid !important;
+              }
+              table {
+                page-break-inside: auto !important;
+                width: 100% !important;
+                border-collapse: collapse !important;
+              }
+              .print\\:hidden {
+                display: none !important;
+              }
+              @page {
+                size: A4 portrait;
+                margin: 12mm 10mm 12mm 10mm;
+              }
+            }
+          `}</style>
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-8 space-y-6 shadow-2xl relative border-t-8 border-indigo-600 print-analysis-container my-8">
+            <button 
+              onClick={() => setAnalysisAssignment(null)}
+              className="absolute top-6 right-6 p-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition print:hidden"
+            >
+              ✕
+            </button>
+
+            {/* Print action controls inside modal */}
+            <div className="flex items-center justify-between pb-4 border-b print:hidden">
+              <div>
+                <h3 className="font-black text-lg text-slate-800">รายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบและคะแนนนักเรียน</h3>
+                <p className="text-xs text-slate-400 font-bold">ชุดการบ้าน/ข้อสอบ: {analysisAssignment.title || analysisAssignment.subject}</p>
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => window.print()}
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-xl flex items-center gap-2 shadow-md"
+                >
+                  <Printer size={16}/> พิมพ์เอกสาร / บันทึก PDF
+                </button>
+              </div>
+            </div>
+
+            {loadingAnalysis ? (
+              <div className="py-12 text-center text-slate-500 font-bold">กำลังโหลดข้อมูลข้อสอบและการวิเคราะห์...</div>
+            ) : (
+              /* Printable Content Area */
+              <div className="printable-analysis-report space-y-6 text-slate-900 text-xs font-sarabun p-4 bg-white">
+                {/* Header */}
+                <div className="text-center space-y-1 pb-4 border-b-2 border-slate-900">
+                  <h2 className="text-xl font-bold tracking-tight">แบบรายงานสรุปผลการวิเคราะห์คุณภาพข้อสอบและผลสัมฤทธิ์ทางการเรียน</h2>
+                  <h3 className="text-sm font-semibold text-indigo-900">
+                    โรงเรียน{teacher.school} • ภาคเรียนการศึกษาปัจจุบัน
+                  </h3>
+                  <div className="bg-slate-100 p-2 rounded-lg my-2 font-bold text-xs text-slate-800">
+                    📌 ชุดการสอบ: {analysisAssignment.title || analysisAssignment.subject} [{analysisAssignment.category === 'MIDTERM' ? 'กลางภาค' : analysisAssignment.category === 'FINAL' ? 'ปลายภาค' : 'แบบทดสอบหน่วยเรียนรู้'}]
+                  </div>
+                  <div className="flex justify-center gap-6 text-xs text-slate-700 pt-1 font-medium">
+                    <span><strong>ครูผู้สอน:</strong> {teacher.name}</span>
+                    <span><strong>รายวิชา:</strong> {analysisAssignment.subject}</span>
+                    <span><strong>ระดับชั้น:</strong> {GRADE_LABELS[analysisAssignment.grade || 'ALL'] || analysisAssignment.grade}</span>
+                  </div>
+                </div>
+
+                {/* 📊 Part 1: Summary KPI Table */}
+                <div>
+                  <h4 className="font-bold text-sm mb-2 text-slate-800">ส่วนที่ 1: ตารางสรุปภาพรวมผลการสอบ</h4>
+                  <table className="w-full border-collapse border border-slate-400 text-center text-xs">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="border border-slate-400 p-2">จำนวนนักเรียนเข้าสอบ</th>
+                        <th className="border border-slate-400 p-2">คะแนนเฉลี่ย (%)</th>
+                        <th className="border border-slate-400 p-2">คะแนนสูงสุด (%)</th>
+                        <th className="border border-slate-400 p-2">คะแนนต่ำสุด (%)</th>
+                        <th className="border border-slate-400 p-2">จำนวนที่สอบผ่าน (≥50%)</th>
+                        <th className="border border-slate-400 p-2">คิดเป็นอัตราผ่าน (%)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td className="border border-slate-400 p-2">{analysisStats.uniqueStudents} คน ({analysisStats.totalAttempts} ครั้ง)</td>
+                        <td className="border border-slate-400 p-2 font-bold">{analysisStats.avgPct}%</td>
+                        <td className="border border-slate-400 p-2">{analysisStats.maxPct}%</td>
+                        <td className="border border-slate-400 p-2">{analysisStats.minPct}%</td>
+                        <td className="border border-slate-400 p-2">{analysisStats.passCount} คน</td>
+                        <td className="border border-slate-400 p-2 font-bold">{analysisStats.passRate}%</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 🎯 Part 2: Item Analysis Table */}
+                <div>
+                  <h4 className="font-bold text-sm mb-2 text-slate-800">ส่วนที่ 2: รายงานผลการจำแนกระดับความยากง่ายของข้อสอบ (Item Analysis)</h4>
+                  <table className="w-full border-collapse border border-slate-400 text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 text-center">
+                        <th className="border border-slate-400 p-1.5 w-10">ข้อที่</th>
+                        <th className="border border-slate-400 p-1.5">โจทย์ข้อสอบ / หน่วยการเรียนรู้</th>
+                        <th className="border border-slate-400 p-1.5 w-16">คนตอบถูก</th>
+                        <th className="border border-slate-400 p-1.5 w-16">คนตอบผิด</th>
+                        <th className="border border-slate-400 p-1.5 w-20">% ความถูกต้อง (p)</th>
+                        <th className="border border-slate-400 p-1.5 w-24">ระดับความยากง่าย</th>
+                        <th className="border border-slate-400 p-1.5">แนวทางการปรับปรุงการจัดการเรียนการสอน</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analysisStats.itemAnalysis.map((q) => (
+                        <tr key={q.id || q.index}>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{q.index}</td>
+                          <td className="border border-slate-400 p-1.5">
+                            <div className="font-medium">{q.text}</div>
+                            <div className="text-[10px] text-slate-500">[{q.unit}]</div>
+                          </td>
+                          <td className="border border-slate-400 p-1.5 text-center">{q.correctCount}</td>
+                          <td className="border border-slate-400 p-1.5 text-center">{q.missedCount}</td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{q.pPct}% (p={q.p.toFixed(2)})</td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{q.difficulty.level}</td>
+                          <td className="border border-slate-400 p-1.5 text-[11px]">{q.difficulty.recommendation}</td>
+                        </tr>
+                      ))}
+                      {analysisStats.itemAnalysis.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="border border-slate-400 p-4 text-center italic text-slate-500">
+                            ไม่มีข้อมูลวิเคราะห์รายข้อสำหรับชุดข้อสอบนี้
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* 📋 Part 3: Student Score Records Table */}
+                <div>
+                  <h4 className="font-bold text-sm mb-2 text-slate-800">ส่วนที่ 3: ตารางบันทึกผลคะแนนสอบและผลสัมฤทธิ์ทางการเรียนรายบุคคล (สำหรับเก็บหลักฐานทางการศึกษา)</h4>
+                  <table className="w-full border-collapse border border-slate-400 text-xs">
+                    <thead>
+                      <tr className="bg-slate-100 text-center">
+                        <th className="border border-slate-400 p-1.5 w-10">ลำดับ</th>
+                        <th className="border border-slate-400 p-1.5">นักเรียน (ชื่อ-นามสกุล / รหัส)</th>
+                        <th className="border border-slate-400 p-1.5 w-20">ชั้น/ห้อง</th>
+                        <th className="border border-slate-400 p-1.5 w-24">คะแนนที่ได้</th>
+                        <th className="border border-slate-400 p-1.5 w-20">ร้อยละ (%)</th>
+                        <th className="border border-slate-400 p-1.5 w-24">ผลการประเมิน</th>
+                        <th className="border border-slate-400 p-1.5 w-28">วันที่ส่งงาน/ทำสอบ</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analysisStats.studentScores.map((st, idx) => (
+                        <tr key={st.id || idx}>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{idx + 1}</td>
+                          <td className="border border-slate-400 p-1.5">
+                            <div className="font-bold text-slate-900">{st.studentName}</div>
+                            <div className="text-[10px] text-slate-500">รหัส: {st.studentId}</div>
+                          </td>
+                          <td className="border border-slate-400 p-1.5 text-center font-medium">{st.classroom}</td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{st.score} / {st.total}</td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">{st.pct}%</td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold">
+                            {st.isPass ? 'ผ่านเกณฑ์' : 'ควรพัฒนา'}
+                          </td>
+                          <td className="border border-slate-400 p-1.5 text-center text-[10px] text-slate-600">
+                            {st.timestamp ? new Date(st.timestamp).toLocaleDateString('th-TH') : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                      {analysisStats.studentScores.length === 0 && (
+                        <tr>
+                          <td colSpan={7} className="border border-slate-400 p-4 text-center italic text-slate-500">
+                            ยังไม่มีนักเรียนส่งการบ้านหรือทำชุดการสอบนี้
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* ✍️ Signatures */}
+                <div className="pt-8 grid grid-cols-3 gap-6 text-center text-xs font-medium">
+                  <div className="space-y-8">
+                    <p>ลงชื่อ..........................................................</p>
+                    <p>({teacher.name})<br/>ครูผู้สอน/ผู้สรุปรายงาน</p>
+                  </div>
+                  <div className="space-y-8">
+                    <p>ลงชื่อ..........................................................</p>
+                    <p>(..........................................................)<br/>หัวหน้าฝ่ายวิชาการ</p>
+                  </div>
+                  <div className="space-y-8">
+                    <p>ลงชื่อ..........................................................</p>
+                    <p>(..........................................................)<br/>ผู้อำนวยการโรงเรียน</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };
