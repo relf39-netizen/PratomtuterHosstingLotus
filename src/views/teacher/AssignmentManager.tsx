@@ -117,8 +117,10 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
   }, [stats]);
 
   const handleToggleRetakeForStudent = async (assignmentId: string, studentId: string, r: ExamResult | undefined, allowRetake: boolean) => {
+    const validResultId = (r?.id && !r.id.startsWith('res_temp_')) ? r.id : undefined;
+
     const res = await toggleRetakePermission({
-      resultId: r?.id,
+      resultId: validResultId,
       assignmentId,
       studentId,
       allowRetake,
@@ -139,15 +141,18 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
         });
 
         if (!found) {
+          const st = students.find(s => String(s.id) === String(studentId));
           return [
             ...prev,
             {
               id: 'res_temp_' + studentId + '_' + Date.now(),
               studentId,
+              studentName: st?.name || '',
+              school: st?.school || teacher.school,
               assignmentId,
               score: 0,
               totalQuestions: 0,
-              subject: '',
+              subject: selectedAssignment?.subject || '',
               timestamp: Date.now(),
               details: { retakeAllowed: allowRetake }
             }
@@ -2296,15 +2301,15 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                     </div>
                                 </div>
 
-                                <table className="w-full text-base text-left">
+                                <table className="w-full text-sm text-left">
                                     <thead className="bg-slate-50 text-slate-500 font-black sticky top-0 shadow-sm uppercase text-[10px] tracking-widest">
                                         <tr>
-                                            <th className="p-6">ชื่อนักเรียน</th>
-                                            <th className="p-6 text-center">ห้อง</th>
-                                            <th className="p-6 text-center">สถานะ</th>
-                                            <th className="p-6 text-right">คะแนน</th>
-                                            <th className="p-6 text-center">รายละเอียด</th>
-                                            <th className="p-6 text-center">สิทธิ์สอบแก้ตัว</th>
+                                            <th className="py-3 px-3">ชื่อนักเรียน</th>
+                                            <th className="py-3 px-3 text-center">ห้อง</th>
+                                            <th className="py-3 px-3 text-center">สถานะ</th>
+                                            <th className="py-3 px-3 text-right">คะแนน</th>
+                                            <th className="py-3 px-3 text-center">รายละเอียด</th>
+                                            <th className="py-3 px-3 text-center">สิทธิ์สอบแก้ตัว</th>
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
@@ -2317,42 +2322,42 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
 
                                             return (
                                                 <tr key={s.id} className="hover:bg-slate-50 transition">
-                                                    <td className="p-6 flex items-center gap-4">
-                                                        <span className="text-4xl bg-slate-50 p-2 rounded-2xl shadow-inner">{s.avatar}</span>
-                                                        <span className="font-black text-slate-700 text-lg">{s.name}</span>
+                                                    <td className="py-3 px-3 flex items-center gap-2.5">
+                                                        <span className="text-lg bg-slate-100/80 w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border border-slate-200/50">{s.avatar || '🎓'}</span>
+                                                        <span className="font-bold text-slate-800 text-xs sm:text-sm whitespace-nowrap">{s.name}</span>
                                                     </td>
-                                                    <td className="p-6 text-center text-slate-500 font-black">ห้อง {s.classroom}</td>
-                                                    <td className="p-6 text-center">
+                                                    <td className="py-3 px-3 text-center text-slate-600 text-xs font-bold">ห้อง {s.classroom}</td>
+                                                    <td className="py-3 px-3 text-center">
                                                         {r && r.score !== undefined ? (
-                                                            <span className="bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-full text-xs font-black border border-emerald-100 shadow-sm">ส่งแล้ว</span>
+                                                            <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg text-[11px] font-black border border-emerald-200/80 shadow-2xs">ส่งแล้ว</span>
                                                         ) : (
-                                                            <span className="text-slate-400 italic font-bold">ยังไม่ส่ง</span>
+                                                            <span className="text-slate-400 italic text-xs font-bold">ยังไม่ส่ง</span>
                                                         )}
                                                     </td>
-                                                    <td className="p-6 text-right font-black text-indigo-600 text-2xl">
+                                                    <td className="py-3 px-3 text-right font-black text-indigo-600 text-base">
                                                         {r ? (
                                                             <div>
                                                                 <div>{r.score}/{r.totalQuestions}</div>
                                                                 {retakeScore !== undefined && (
-                                                                    <div className="text-xs text-amber-600 font-bold mt-0.5">แก้ตัว: {retakeScore}/{retakeTotal || r.totalQuestions}</div>
+                                                                    <div className="text-[10px] text-amber-600 font-bold mt-0.5">แก้ตัว: {retakeScore}/{retakeTotal || r.totalQuestions}</div>
                                                                 )}
                                                             </div>
                                                         ) : '-'}
                                                     </td>
-                                                    <td className="p-6 text-center">
+                                                    <td className="py-3 px-3 text-center">
                                                         {r ? (
                                                             <button
                                                                 type="button"
                                                                 onClick={() => setSelectedDetailStudent({
                                                                     studentName: s.name,
                                                                     studentClassroom: s.classroom,
-                                                                    examTitle: selectedAssignment.title,
+                                                                    examTitle: selectedAssignment.title || selectedAssignment.subject,
                                                                     subjectName: selectedAssignment.subject,
                                                                     score: r.score,
                                                                     totalQuestions: r.totalQuestions,
                                                                     timestamp: r.timestamp,
                                                                     details: r.details,
-                                                                    assignmentQuestions: questions.filter(q => String(q.assignmentId) === String(selectedAssignment.id))
+                                                                    assignmentQuestions: examQuestions
                                                                 })}
                                                                 className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm mx-auto active:scale-95"
                                                             >
@@ -2360,7 +2365,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                                             </button>
                                                         ) : '-'}
                                                     </td>
-                                                    <td className="p-6 text-center">
+                                                    <td className="py-3 px-3 text-center">
                                                         <button 
                                                             type="button"
                                                             onClick={() => handleToggleRetakeForStudent(selectedAssignment.id, s.id, r, !isRetakeAllowed)}
@@ -2769,7 +2774,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                         <tr key={st.id || idx}>
                           <td className="border border-slate-400 p-1.5 text-center font-bold">{idx + 1}</td>
                           <td className="border border-slate-400 p-1.5">
-                            <div className="font-bold text-slate-900">{st.studentName}</div>
+                            <div className="font-bold text-slate-900 text-xs leading-snug">{st.studentName}</div>
                             <div className="text-[10px] text-slate-500">รหัส: {st.studentId}</div>
                           </td>
                           <td className="border border-slate-400 p-1.5 text-center font-medium">{st.classroom}</td>

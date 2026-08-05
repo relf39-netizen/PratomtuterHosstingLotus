@@ -415,6 +415,7 @@ app.post('/api', async (req, res) => {
 
         case 'toggleRetakePermission': {
           const { resultId, assignmentId, studentId, allowRetake, mode } = args;
+
           if (mode === 'all' && assignmentId) {
             const rows = await query('SELECT id, details FROM exam_results WHERE assignment_id = ?', [assignmentId]);
             for (const r of rows) {
@@ -425,37 +426,69 @@ app.post('/api', async (req, res) => {
               detailsObj.retakeAllowed = allowRetake;
               await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), r.id]);
             }
+
+            if (allowRetake) {
+              const asgRows = await query('SELECT subject, category, school FROM assignments WHERE id = ? LIMIT 1', [assignmentId]);
+              if (asgRows && asgRows.length > 0) {
+                const asg = asgRows[0];
+                const stRows = await query('SELECT id, name, school FROM students WHERE school = ?', [asg.school]);
+                for (const st of stRows || []) {
+                  const existing = await query('SELECT id FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1', [st.id, assignmentId]);
+                  if (!existing || existing.length === 0) {
+                    const resId = generateId('res_');
+                    const detailsObj = { retakeAllowed: true };
+                    await query(
+                      'INSERT INTO exam_results (id, student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
+                      [resId, st.id, st.name, st.school || asg.school, assignmentId, asg.subject, asg.category, Date.now(), JSON.stringify(detailsObj)]
+                    );
+                  }
+                }
+              }
+            }
             return res.json({ success: true });
-          } else if (resultId) {
-            const rows = await query('SELECT id, details FROM exam_results WHERE id = ? LIMIT 1', [resultId]);
+          }
+
+          let rowToUpdate: any = null;
+          if (resultId && !String(resultId).startsWith('res_temp_')) {
+            const rows = await query('SELECT * FROM exam_results WHERE id = ? LIMIT 1', [resultId]);
             if (rows && rows.length > 0) {
-              let detailsObj: any = {};
-              try {
-                detailsObj = typeof rows[0].details === 'string' ? JSON.parse(rows[0].details) : (rows[0].details || {});
-              } catch (e) {}
-              detailsObj.retakeAllowed = allowRetake;
-              await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), rows[0].id]);
-              return res.json({ success: true });
+              rowToUpdate = rows[0];
             }
+          }
+
+          if (!rowToUpdate && studentId && assignmentId) {
+            const rows = await query('SELECT * FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1', [studentId, assignmentId]);
+            if (rows && rows.length > 0) {
+              rowToUpdate = rows[0];
+            }
+          }
+
+          if (rowToUpdate) {
+            let detailsObj: any = {};
+            try {
+              detailsObj = typeof rowToUpdate.details === 'string' ? JSON.parse(rowToUpdate.details) : (rowToUpdate.details || {});
+            } catch (e) {}
+            detailsObj.retakeAllowed = allowRetake;
+            await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), rowToUpdate.id]);
+            return res.json({ success: true });
           } else if (studentId && assignmentId) {
-            const rows = await query('SELECT id, details FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1', [studentId, assignmentId]);
-            if (rows && rows.length > 0) {
-              let detailsObj: any = {};
-              try {
-                detailsObj = typeof rows[0].details === 'string' ? JSON.parse(rows[0].details) : (rows[0].details || {});
-              } catch (e) {}
-              detailsObj.retakeAllowed = allowRetake;
-              await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), rows[0].id]);
-              return res.json({ success: true });
-            } else {
-              const resId = generateId('res_');
-              const detailsObj = { retakeAllowed: allowRetake };
-              await query(
-                'INSERT INTO exam_results (id, student_id, assignment_id, score, total_questions, timestamp, details) VALUES (?, ?, ?, 0, 0, ?, ?)',
-                [resId, studentId, assignmentId, Date.now(), JSON.stringify(detailsObj)]
-              );
-              return res.json({ success: true });
-            }
+            const resId = generateId('res_');
+            const detailsObj = { retakeAllowed: allowRetake };
+
+            const stRows = await query('SELECT name, school FROM students WHERE id = ? LIMIT 1', [studentId]);
+            const studentName = (stRows && stRows.length > 0) ? stRows[0].name : '';
+            const school = (stRows && stRows.length > 0) ? stRows[0].school : '';
+
+            const asgRows = await query('SELECT subject, category, school FROM assignments WHERE id = ? LIMIT 1', [assignmentId]);
+            const subject = (asgRows && asgRows.length > 0) ? asgRows[0].subject : '';
+            const category = (asgRows && asgRows.length > 0) ? asgRows[0].category : '';
+            const finalSchool = school || ((asgRows && asgRows.length > 0) ? asgRows[0].school : '');
+
+            await query(
+              'INSERT INTO exam_results (id, student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
+              [resId, studentId, studentName, finalSchool, assignmentId, subject, category, Date.now(), JSON.stringify(detailsObj)]
+            );
+            return res.json({ success: true });
           }
           return res.json({ success: false });
         }
@@ -1543,6 +1576,7 @@ app.post('/api', async (req, res) => {
 
       case 'toggleRetakePermission': {
         const { resultId, assignmentId, studentId, allowRetake, mode } = args;
+
         if (mode === 'all' && assignmentId) {
           (db.exam_results || []).forEach((r: any) => {
             if (String(r.assignment_id || r.assignmentId) === String(assignmentId)) {
@@ -1554,45 +1588,83 @@ app.post('/api', async (req, res) => {
               r.details = JSON.stringify(detailsObj);
             }
           });
+
+          if (allowRetake) {
+            const asg = (db.assignments || []).find((a: any) => String(a.id) === String(assignmentId));
+            const schoolName = asg?.school || '';
+            const eligibleStudents = (db.students || []).filter((s: any) => !schoolName || s.school === schoolName);
+
+            eligibleStudents.forEach((st: any) => {
+              const existing = (db.exam_results || []).find((r: any) => String(r.student_id || r.studentId) === String(st.id) && String(r.assignment_id || r.assignmentId) === String(assignmentId));
+              if (!existing) {
+                if (!db.exam_results) db.exam_results = [];
+                db.exam_results.push({
+                  id: generateId('res_'),
+                  student_id: st.id,
+                  studentId: st.id,
+                  student_name: st.name || '',
+                  studentName: st.name || '',
+                  school: st.school || schoolName,
+                  assignment_id: assignmentId,
+                  assignmentId: assignmentId,
+                  subject: asg?.subject || '',
+                  category: asg?.category || '',
+                  score: 0,
+                  total_questions: 0,
+                  totalQuestions: 0,
+                  timestamp: Date.now(),
+                  details: JSON.stringify({ retakeAllowed: true })
+                });
+              }
+            });
+          }
+
           saveJsonDb(db);
           return res.json({ success: true });
-        } else if (resultId) {
-          const r = (db.exam_results || []).find((item: any) => String(item.id) === String(resultId));
-          if (r) {
-            let detailsObj: any = {};
-            try {
-              detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
-            } catch (e) {}
-            detailsObj.retakeAllowed = allowRetake;
-            r.details = JSON.stringify(detailsObj);
-            saveJsonDb(db);
-            return res.json({ success: true });
-          }
+        }
+
+        let r: any = null;
+        if (resultId && !String(resultId).startsWith('res_temp_')) {
+          r = (db.exam_results || []).find((item: any) => String(item.id) === String(resultId));
+        }
+        if (!r && studentId && assignmentId) {
+          r = (db.exam_results || []).find((item: any) => String(item.student_id || item.studentId) === String(studentId) && String(item.assignment_id || item.assignmentId) === String(assignmentId));
+        }
+
+        if (r) {
+          let detailsObj: any = {};
+          try {
+            detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
+          } catch (e) {}
+          detailsObj.retakeAllowed = allowRetake;
+          r.details = JSON.stringify(detailsObj);
+          saveJsonDb(db);
+          return res.json({ success: true });
         } else if (studentId && assignmentId) {
-          const r = (db.exam_results || []).find((item: any) => String(item.student_id || item.studentId) === String(studentId) && String(item.assignment_id || item.assignmentId) === String(assignmentId));
-          if (r) {
-            let detailsObj: any = {};
-            try {
-              detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
-            } catch (e) {}
-            detailsObj.retakeAllowed = allowRetake;
-            r.details = JSON.stringify(detailsObj);
-            saveJsonDb(db);
-            return res.json({ success: true });
-          } else {
-            const newRes = {
-              id: generateId('res_'),
-              student_id: studentId,
-              assignment_id: assignmentId,
-              score: 0,
-              total_questions: 0,
-              timestamp: Date.now(),
-              details: JSON.stringify({ retakeAllowed: allowRetake })
-            };
-            db.exam_results.push(newRes);
-            saveJsonDb(db);
-            return res.json({ success: true });
-          }
+          const st = (db.students || []).find((s: any) => String(s.id) === String(studentId));
+          const asg = (db.assignments || []).find((a: any) => String(a.id) === String(assignmentId));
+
+          const newRes = {
+            id: generateId('res_'),
+            student_id: studentId,
+            studentId: studentId,
+            student_name: st?.name || '',
+            studentName: st?.name || '',
+            school: st?.school || asg?.school || '',
+            assignment_id: assignmentId,
+            assignmentId: assignmentId,
+            subject: asg?.subject || '',
+            category: asg?.category || '',
+            score: 0,
+            total_questions: 0,
+            totalQuestions: 0,
+            timestamp: Date.now(),
+            details: JSON.stringify({ retakeAllowed: allowRetake })
+          };
+          if (!db.exam_results) db.exam_results = [];
+          db.exam_results.push(newRes);
+          saveJsonDb(db);
+          return res.json({ success: true });
         }
         return res.json({ success: false });
       }

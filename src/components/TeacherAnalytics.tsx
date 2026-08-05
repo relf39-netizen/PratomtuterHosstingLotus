@@ -4,7 +4,7 @@ import { ExamResult, Question, Student, SubjectConfig, Teacher, Assignment } fro
 import { 
   Target, BarChart3, AlertCircle, CheckCircle2, BookOpen,
   Printer, Search, Award, Users, GraduationCap,
-  Sparkles, FileText, Layers, Filter, RotateCcw, X, Lock, Unlock, RefreshCw
+  Sparkles, FileText, Layers, Filter, RotateCcw, X
 } from 'lucide-react';
 import { toggleRetakePermission } from '../services/api';
 import { StudentExamDetailModal, extractDetailsArray } from './StudentExamDetailModal';
@@ -112,8 +112,10 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
   const handleToggleRetake = async (r: ExamResult, allowRetake: boolean) => {
     if (!r) return;
+    const validResultId = (r.id && !r.id.startsWith('res_temp_')) ? r.id : undefined;
+
     const success = await toggleRetakePermission({
-      resultId: r.id,
+      resultId: validResultId,
       assignmentId: r.assignmentId || undefined,
       studentId: r.studentId,
       allowRetake,
@@ -122,7 +124,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
     if (success) {
       setLocalStats(prev => prev.map(item => {
-        if (String(item.id) === String(r.id)) {
+        if (String(item.id) === String(r.id) || (r.studentId && item.studentId === r.studentId && item.assignmentId === r.assignmentId)) {
           const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
           detObj.retakeAllowed = allowRetake;
           return { ...item, details: detObj };
@@ -2075,7 +2077,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         <tr key={r.id || idx}>
                           <td className="border border-slate-400 p-1.5 text-center font-bold">{idx + 1}</td>
                           <td className="border border-slate-400 p-1.5">
-                            <div className="font-bold text-slate-900">{stName}</div>
+                            <div className="font-bold text-slate-900 text-xs leading-snug">{stName}</div>
                             <div className="text-[10px] text-slate-500">รหัส: {r.studentId}</div>
                           </td>
                           <td className="border border-slate-400 p-1.5 text-center font-medium">{stRoom}</td>

@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, CheckCircle, XCircle, FileText, User, Calendar, BookOpen, Printer, Award, HelpCircle } from 'lucide-react';
+import { X, CheckCircle, XCircle, FileText, Calendar, Printer, HelpCircle } from 'lucide-react';
 import { Question } from '../types';
 
 export function extractDetailsArray(rawDetails: any): any[] {
