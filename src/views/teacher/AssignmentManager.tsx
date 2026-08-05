@@ -16,6 +16,7 @@ import {
 } from 'recharts';
 import { addAssignment, deleteAssignment, addQuestion, getQuestionsByAssignment, getClassrooms, getQuestionsBySubjectAndGrade, toggleAssignmentStatus, toggleRetakePermission } from '../../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../../services/aiService';
+import { StudentExamDetailModal, extractDetailsArray } from '../../components/StudentExamDetailModal';
 
 // ประกาศ XLSX สำหรับระบบ Import
 declare const XLSX: any;
@@ -68,6 +69,17 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
   const [analysisAssignment, setAnalysisAssignment] = useState<Assignment | null>(null);
   const [analysisQuestions, setAnalysisQuestions] = useState<Question[]>([]);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [selectedDetailStudent, setSelectedDetailStudent] = useState<{
+    studentName: string;
+    studentClassroom?: string;
+    examTitle: string;
+    subjectName: string;
+    score: number;
+    totalQuestions: number;
+    timestamp?: number;
+    details: any;
+    assignmentQuestions?: Question[];
+  } | null>(null);
   
   // Form States (Combined into one page)
   const [assignTitle, setAssignTitle] = useState('');
@@ -901,7 +913,8 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
         total: r.totalQuestions || totalQ,
         pct,
         isPass: pct >= 50,
-        timestamp: r.timestamp
+        timestamp: r.timestamp,
+        details: r.details
       };
     });
 
@@ -916,9 +929,9 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
       let missedCount = 0;
 
       assignmentResults.forEach(r => {
-        const detailsArray = typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
+        const detailsArray = extractDetailsArray(r.details);
         if (Array.isArray(detailsArray)) {
-          const det = detailsArray.find((d: any) => String(d.questionId).trim() === String(q.id).trim() || d.questionIndex === idx);
+          const det = detailsArray.find((d: any) => String(d.questionId || d.id || '').trim() === String(q.id).trim() || d.questionIndex === idx);
           if (det) {
             if (det.isCorrect) correctCount++;
             else missedCount++;
@@ -2290,6 +2303,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                             <th className="p-6 text-center">ห้อง</th>
                                             <th className="p-6 text-center">สถานะ</th>
                                             <th className="p-6 text-right">คะแนน</th>
+                                            <th className="p-6 text-center">รายละเอียด</th>
                                             <th className="p-6 text-center">สิทธิ์สอบแก้ตัว</th>
                                         </tr>
                                     </thead>
@@ -2323,6 +2337,27 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                                                     <div className="text-xs text-amber-600 font-bold mt-0.5">แก้ตัว: {retakeScore}/{retakeTotal || r.totalQuestions}</div>
                                                                 )}
                                                             </div>
+                                                        ) : '-'}
+                                                    </td>
+                                                    <td className="p-6 text-center">
+                                                        {r ? (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setSelectedDetailStudent({
+                                                                    studentName: s.name,
+                                                                    studentClassroom: s.classroom,
+                                                                    examTitle: selectedAssignment.title,
+                                                                    subjectName: selectedAssignment.subject,
+                                                                    score: r.score,
+                                                                    totalQuestions: r.totalQuestions,
+                                                                    timestamp: r.timestamp,
+                                                                    details: r.details,
+                                                                    assignmentQuestions: questions.filter(q => String(q.assignmentId) === String(selectedAssignment.id))
+                                                                })}
+                                                                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm mx-auto active:scale-95"
+                                                            >
+                                                                <FileText size={14}/> รายละเอียด
+                                                            </button>
                                                         ) : '-'}
                                                     </td>
                                                     <td className="p-6 text-center">
@@ -2726,6 +2761,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                         <th className="border border-slate-400 p-1.5 w-20">ร้อยละ (%)</th>
                         <th className="border border-slate-400 p-1.5 w-24">ผลการประเมิน</th>
                         <th className="border border-slate-400 p-1.5 w-28">วันที่ส่งงาน/ทำสอบ</th>
+                        <th className="border border-slate-400 p-1.5 w-20 print:hidden">รายละเอียด</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -2745,11 +2781,31 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                           <td className="border border-slate-400 p-1.5 text-center text-[10px] text-slate-600">
                             {st.timestamp ? new Date(st.timestamp).toLocaleDateString('th-TH') : '-'}
                           </td>
+                          <td className="border border-slate-400 p-1.5 text-center print:hidden">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedDetailStudent({
+                                studentName: st.studentName,
+                                studentClassroom: st.classroom,
+                                examTitle: analysisAssignment?.title || 'แบบทดสอบ',
+                                subjectName: analysisAssignment?.subject || 'วิชาทั่วไป',
+                                score: st.score,
+                                totalQuestions: st.total,
+                                timestamp: st.timestamp,
+                                details: st.details,
+                                assignmentQuestions: analysisQuestions
+                              })}
+                              className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-black transition active:scale-95 shadow flex items-center justify-center gap-1 mx-auto"
+                            >
+                              <FileText size={11}/>
+                              <span>รายละเอียด</span>
+                            </button>
+                          </td>
                         </tr>
                       ))}
                       {analysisStats.studentScores.length === 0 && (
                         <tr>
-                          <td colSpan={7} className="border border-slate-400 p-4 text-center italic text-slate-500">
+                          <td colSpan={8} className="border border-slate-400 p-4 text-center italic text-slate-500">
                             ยังไม่มีนักเรียนส่งการบ้านหรือทำชุดการสอบนี้
                           </td>
                         </tr>
@@ -2799,6 +2855,22 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
       </div>,
       document.body
     )}
+
+      {selectedDetailStudent && (
+        <StudentExamDetailModal
+          isOpen={!!selectedDetailStudent}
+          onClose={() => setSelectedDetailStudent(null)}
+          studentName={selectedDetailStudent.studentName}
+          studentClassroom={selectedDetailStudent.studentClassroom}
+          examTitle={selectedDetailStudent.examTitle}
+          subjectName={selectedDetailStudent.subjectName}
+          score={selectedDetailStudent.score}
+          totalQuestions={selectedDetailStudent.totalQuestions}
+          timestamp={selectedDetailStudent.timestamp}
+          details={selectedDetailStudent.details}
+          assignmentQuestions={selectedDetailStudent.assignmentQuestions}
+        />
+      )}
     </div>
   );
 };

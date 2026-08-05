@@ -7,6 +7,7 @@ import {
   Sparkles, FileText, Layers, Filter, RotateCcw, X, Lock, Unlock, RefreshCw
 } from 'lucide-react';
 import { toggleRetakePermission } from '../services/api';
+import { StudentExamDetailModal, extractDetailsArray } from './StudentExamDetailModal';
 
 interface TeacherAnalyticsProps {
   stats: ExamResult[];
@@ -93,6 +94,17 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   const [localStats, setLocalStats] = useState<ExamResult[]>(stats);
+  const [selectedDetailStudent, setSelectedDetailStudent] = useState<{
+    studentName: string;
+    studentClassroom?: string;
+    examTitle: string;
+    subjectName: string;
+    score: number;
+    totalQuestions: number;
+    timestamp?: number;
+    details: any;
+    assignmentQuestions?: Question[];
+  } | null>(null);
 
   useEffect(() => {
     setLocalStats(stats);
@@ -377,7 +389,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       }
 
       if (selectedTopic !== 'ALL') {
-        const detailsArray = typeof res.details === 'string' ? JSON.parse(res.details) : res.details;
+        const detailsArray = extractDetailsArray(res.details);
         let matchTopic = false;
         if (Array.isArray(detailsArray)) {
           matchTopic = detailsArray.some((det: any) => {
@@ -525,7 +537,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     }> = {};
 
     latestStatsPerStudent.forEach(res => {
-      const detailsArray = typeof res.details === 'string' ? JSON.parse(res.details) : res.details;
+      const detailsArray = extractDetailsArray(res.details);
       if (detailsArray && Array.isArray(detailsArray)) {
         detailsArray.forEach((det: any) => {
           if (!det || !det.questionId) return;
@@ -1306,18 +1318,43 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                                 </div>
                               </div>
 
-                              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
                                 <span className="text-[10px] font-bold text-slate-500">
                                   สอบแก้ตัว: {item.retakeAllowed ? <span className="text-emerald-600 font-black">🔓 เปิดสิทธิ์แล้ว</span> : <span className="text-slate-400 font-bold">🔒 ปิดอยู่</span>}
                                 </span>
-                                {item.resultObj && (
-                                  <button
-                                    onClick={() => handleToggleRetake(item.resultObj!, !item.retakeAllowed)}
-                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition active:scale-95 shadow flex items-center gap-1 ${item.retakeAllowed ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
-                                  >
-                                    {item.retakeAllowed ? '🔒 ปิดสอบแก้ตัว' : '🔓 เปิดให้สอบแก้ตัว'}
-                                  </button>
-                                )}
+                                <div className="flex items-center gap-1.5">
+                                  {item.resultObj && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const resObj = item.resultObj;
+                                        setSelectedDetailStudent({
+                                          studentName: st.studentName,
+                                          studentClassroom: st.classroom,
+                                          examTitle: `${individualSubTab === 'MIDTERM' ? 'สอบกลางภาค' : 'สอบปลายภาค'} - ${sub}`,
+                                          subjectName: sub,
+                                          score: item.score,
+                                          totalQuestions: item.total,
+                                          timestamp: resObj?.timestamp,
+                                          details: resObj?.details,
+                                          assignmentQuestions: questions.filter(q => q.subject === sub || q.unit === sub)
+                                        });
+                                      }}
+                                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-lg text-[10px] font-black transition active:scale-95 border border-indigo-200/80 flex items-center gap-1 shadow-sm"
+                                    >
+                                      <FileText size={12}/>
+                                      <span>รายละเอียด</span>
+                                    </button>
+                                  )}
+                                  {item.resultObj && (
+                                    <button
+                                      onClick={() => handleToggleRetake(item.resultObj!, !item.retakeAllowed)}
+                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition active:scale-95 shadow flex items-center gap-1 ${item.retakeAllowed ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                                    >
+                                      {item.retakeAllowed ? '🔒 ปิดสอบแก้ตัว' : '🔓 เปิดให้สอบแก้ตัว'}
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -1991,6 +2028,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                       <th className="border border-slate-400 p-1.5 w-24">ผลการสอบแก้ตัว</th>
                       <th className="border border-slate-400 p-1.5 w-20">ผลการประเมิน</th>
                       <th className="border border-slate-400 p-1.5 w-24">วันที่ทำสอบ</th>
+                      <th className="border border-slate-400 p-1.5 w-20">รายละเอียด</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2004,7 +2042,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                       let totalVal = r.totalQuestions || 1;
 
                       if (selectedTopic !== 'ALL') {
-                        const detailsArray = typeof r.details === 'string' ? JSON.parse(r.details) : r.details;
+                        const detailsArray = extractDetailsArray(r.details);
                         if (Array.isArray(detailsArray)) {
                           let topicScore = 0;
                           let topicTotal = 0;
@@ -2069,12 +2107,34 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                           <td className="border border-slate-400 p-1.5 text-center text-[10px] text-slate-600">
                             {formatThaiDate(r.timestamp)}
                           </td>
+                          <td className="border border-slate-400 p-1.5 text-center print:hidden">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDetailStudent({
+                                  studentName: stName,
+                                  studentClassroom: stRoom,
+                                  examTitle: `${cat === 'MIDTERM' ? 'สอบกลางภาค' : cat === 'FINAL' ? 'สอบปลายภาค' : 'แบบทดสอบ'} - ${r.subject}`,
+                                  subjectName: r.subject,
+                                  score: scoreVal,
+                                  totalQuestions: totalVal,
+                                  timestamp: r.timestamp,
+                                  details: r.details,
+                                  assignmentQuestions: questions.filter(q => q.subject === r.subject)
+                                });
+                              }}
+                              className="px-2 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded text-[10px] font-black transition active:scale-95 shadow flex items-center justify-center gap-1 mx-auto"
+                            >
+                              <FileText size={11}/>
+                              <span>รายละเอียด</span>
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
                     {filteredStats.length === 0 && (
                       <tr>
-                        <td colSpan={10} className="border border-slate-400 p-4 text-center italic text-slate-500">
+                        <td colSpan={11} className="border border-slate-400 p-4 text-center italic text-slate-500">
                           ไม่มีข้อมูลผลคะแนนรายบุคคลในเงื่อนไขที่เลือก
                         </td>
                       </tr>
@@ -2123,6 +2183,22 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       </div>,
       document.body
     )}
+
+      {selectedDetailStudent && (
+        <StudentExamDetailModal
+          isOpen={!!selectedDetailStudent}
+          onClose={() => setSelectedDetailStudent(null)}
+          studentName={selectedDetailStudent.studentName}
+          studentClassroom={selectedDetailStudent.studentClassroom}
+          examTitle={selectedDetailStudent.examTitle}
+          subjectName={selectedDetailStudent.subjectName}
+          score={selectedDetailStudent.score}
+          totalQuestions={selectedDetailStudent.totalQuestions}
+          timestamp={selectedDetailStudent.timestamp}
+          details={selectedDetailStudent.details}
+          assignmentQuestions={selectedDetailStudent.assignmentQuestions}
+        />
+      )}
     </div>
   );
 };
