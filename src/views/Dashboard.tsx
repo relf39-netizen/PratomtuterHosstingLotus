@@ -153,7 +153,14 @@ const Dashboard: React.FC<DashboardProps> = ({
       const isRetakePassed = retakePct !== undefined ? retakePct >= 50 : false;
 
       // Eligible for retake ONLY if teacher explicitly unlocked/opened retake for this student (retakeAllowed === true)
-      const isRetakeAllowed = !!detailsObj?.retakeAllowed;
+      const isRetakeAllowed = examResults.some(er => 
+        String(er.studentId || (er as any).student_id).trim() === currentStudentId &&
+        String(er.assignmentId || (er as any).assignment_id).trim() === String(ass.id).trim() &&
+        (() => {
+          const d = typeof er.details === 'string' ? (() => { try { return JSON.parse(er.details); } catch(e) { return er.details; } })() : er.details;
+          return !!d?.retakeAllowed;
+        })()
+      );
 
       if (isRetakeAllowed) {
         retakes.push({

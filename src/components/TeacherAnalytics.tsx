@@ -715,7 +715,14 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
         retakeTotal: retakeTotalVal,
         retakePct: retakePct,
         isRetakePassed: isRetakePassed,
-        retakeAllowed: !!detailsObj?.retakeAllowed,
+        retakeAllowed: localStats.some(s => 
+          String(s.studentId || (s as any).student_id) === String(sId) &&
+          (String(s.assignmentId || (s as any).assignment_id) === String(res.assignmentId || (res as any).assignment_id) || s.subject === subName) &&
+          (() => {
+            const d = typeof s.details === 'string' ? (() => { try { return JSON.parse(s.details); } catch(e) { return {}; } })() : (s.details || {});
+            return !!d?.retakeAllowed;
+          })()
+        ),
         resultObj: res
       };
     });

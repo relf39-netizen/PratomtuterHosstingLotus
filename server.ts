@@ -333,12 +333,15 @@ app.post('/api', async (req, res) => {
 
         case 'getTeacherDashboard': {
           const { school } = args;
-          const cleanSchool = String(school).trim();
-          const students = await query('SELECT * FROM students WHERE school = ?', [cleanSchool]);
-          const results = await query('SELECT * FROM exam_results WHERE school = ? ORDER BY timestamp DESC', [cleanSchool]);
-          const assignments = await query('SELECT * FROM assignments WHERE school = ?', [cleanSchool]);
-          const subjects = await query('SELECT * FROM subjects WHERE school = ?', [cleanSchool]);
-          const schoolRows = await query('SELECT * FROM schools WHERE name = ? LIMIT 1', [cleanSchool]);
+          const cleanSchool = String(school || '').trim();
+          const students = await query('SELECT * FROM students WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [cleanSchool]);
+          const results = await query(
+            'SELECT * FROM exam_results WHERE LOWER(TRIM(school)) = LOWER(TRIM(?)) OR student_id IN (SELECT id FROM students WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))) OR assignment_id IN (SELECT id FROM assignments WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))) ORDER BY timestamp DESC',
+            [cleanSchool, cleanSchool, cleanSchool]
+          );
+          const assignments = await query('SELECT * FROM assignments WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [cleanSchool]);
+          const subjects = await query('SELECT * FROM subjects WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [cleanSchool]);
+          const schoolRows = await query('SELECT * FROM schools WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1', [cleanSchool]);
           return res.json({
             students,
             results,
@@ -418,7 +421,7 @@ app.post('/api', async (req, res) => {
 
           if (mode === 'all' && assignmentId) {
             const rows = await query('SELECT id, details FROM exam_results WHERE assignment_id = ?', [assignmentId]);
-            for (const r of rows) {
+            for (const r of rows || []) {
               let detailsObj: any = {};
               try {
                 detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
@@ -431,7 +434,7 @@ app.post('/api', async (req, res) => {
               const asgRows = await query('SELECT subject, category, school FROM assignments WHERE id = ? LIMIT 1', [assignmentId]);
               if (asgRows && asgRows.length > 0) {
                 const asg = asgRows[0];
-                const stRows = await query('SELECT id, name, school FROM students WHERE school = ?', [asg.school]);
+                const stRows = asg.school ? await query('SELECT id, name, school FROM students WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [asg.school]) : await query('SELECT id, name, school FROM students');
                 for (const st of stRows || []) {
                   const existing = await query('SELECT id FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1', [st.id, assignmentId]);
                   if (!existing || existing.length === 0) {
@@ -439,7 +442,7 @@ app.post('/api', async (req, res) => {
                     const detailsObj = { retakeAllowed: true };
                     await query(
                       'INSERT INTO exam_results (id, student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
-                      [resId, st.id, st.name, st.school || asg.school, assignmentId, asg.subject, asg.category, Date.now(), JSON.stringify(detailsObj)]
+                      [resId, st.id, st.name, st.school || asg.school || '', assignmentId, asg.subject || '', asg.category || 'GENERAL', Date.now(), JSON.stringify(detailsObj)]
                     );
                   }
                 }
@@ -448,28 +451,35 @@ app.post('/api', async (req, res) => {
             return res.json({ success: true });
           }
 
-          let rowToUpdate: any = null;
+          let rowsToUpdate: any[] = [];
           if (resultId && !String(resultId).startsWith('res_temp_')) {
-            const rows = await query('SELECT * FROM exam_results WHERE id = ? LIMIT 1', [resultId]);
-            if (rows && rows.length > 0) {
-              rowToUpdate = rows[0];
+            const rowsById = await query('SELECT * FROM exam_results WHERE id = ?', [resultId]);
+            if (rowsById && rowsById.length > 0) {
+              rowsToUpdate = rowsById;
             }
           }
 
-          if (!rowToUpdate && studentId && assignmentId) {
-            const rows = await query('SELECT * FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1', [studentId, assignmentId]);
-            if (rows && rows.length > 0) {
-              rowToUpdate = rows[0];
+          if (studentId && assignmentId) {
+            const rowsByStudAsg = await query('SELECT * FROM exam_results WHERE student_id = ? AND assignment_id = ?', [studentId, assignmentId]);
+            if (rowsByStudAsg && rowsByStudAsg.length > 0) {
+              const existingIds = new Set(rowsToUpdate.map(r => String(r.id)));
+              for (const r of rowsByStudAsg) {
+                if (!existingIds.has(String(r.id))) {
+                  rowsToUpdate.push(r);
+                }
+              }
             }
           }
 
-          if (rowToUpdate) {
-            let detailsObj: any = {};
-            try {
-              detailsObj = typeof rowToUpdate.details === 'string' ? JSON.parse(rowToUpdate.details) : (rowToUpdate.details || {});
-            } catch (e) {}
-            detailsObj.retakeAllowed = allowRetake;
-            await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), rowToUpdate.id]);
+          if (rowsToUpdate.length > 0) {
+            for (const rowToUpdate of rowsToUpdate) {
+              let detailsObj: any = {};
+              try {
+                detailsObj = typeof rowToUpdate.details === 'string' ? JSON.parse(rowToUpdate.details) : (rowToUpdate.details || {});
+              } catch (e) {}
+              detailsObj.retakeAllowed = allowRetake;
+              await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), rowToUpdate.id]);
+            }
             return res.json({ success: true });
           } else if (studentId && assignmentId) {
             const resId = generateId('res_');
@@ -1520,13 +1530,29 @@ app.post('/api', async (req, res) => {
 
       case 'getTeacherDashboard': {
         const { school } = args;
-        const cleanSchool = String(school).trim().toLowerCase();
-        const students = db.students.filter((s: any) => String(s.school).trim().toLowerCase() === cleanSchool);
-        const results = db.exam_results.filter((r: any) => String(r.school).trim().toLowerCase() === cleanSchool)
-          .sort((a: any, b: any) => b.timestamp - a.timestamp);
-        const assignments = db.assignments.filter((a: any) => String(a.school).trim().toLowerCase() === cleanSchool);
-        const subjects = db.subjects.filter((s: any) => String(s.school).trim().toLowerCase() === cleanSchool);
-        const schoolInfo = db.schools.find((s: any) => String(s.name).trim().toLowerCase() === cleanSchool) || null;
+        const cleanSchool = String(school || '').trim().toLowerCase();
+        const studentIds = new Set(
+          (db.students || [])
+            .filter((s: any) => String(s.school || '').trim().toLowerCase() === cleanSchool)
+            .map((s: any) => String(s.id))
+        );
+        const assignmentIds = new Set(
+          (db.assignments || [])
+            .filter((a: any) => String(a.school || '').trim().toLowerCase() === cleanSchool)
+            .map((a: any) => String(a.id))
+        );
+
+        const students = (db.students || []).filter((s: any) => String(s.school || '').trim().toLowerCase() === cleanSchool);
+        const results = (db.exam_results || []).filter((r: any) => {
+          const rSchool = String(r.school || '').trim().toLowerCase();
+          const rStudId = String(r.student_id || r.studentId || '');
+          const rAsgId = String(r.assignment_id || r.assignmentId || '');
+          return rSchool === cleanSchool || studentIds.has(rStudId) || assignmentIds.has(rAsgId);
+        }).sort((a: any, b: any) => b.timestamp - a.timestamp);
+
+        const assignments = (db.assignments || []).filter((a: any) => String(a.school || '').trim().toLowerCase() === cleanSchool);
+        const subjects = (db.subjects || []).filter((s: any) => String(s.school || '').trim().toLowerCase() === cleanSchool);
+        const schoolInfo = (db.schools || []).find((s: any) => String(s.name || '').trim().toLowerCase() === cleanSchool) || null;
         return res.json({ students, results, assignments, subjects, school: schoolInfo });
       }
 
@@ -1623,21 +1649,21 @@ app.post('/api', async (req, res) => {
           return res.json({ success: true });
         }
 
-        let r: any = null;
-        if (resultId && !String(resultId).startsWith('res_temp_')) {
-          r = (db.exam_results || []).find((item: any) => String(item.id) === String(resultId));
-        }
-        if (!r && studentId && assignmentId) {
-          r = (db.exam_results || []).find((item: any) => String(item.student_id || item.studentId) === String(studentId) && String(item.assignment_id || item.assignmentId) === String(assignmentId));
-        }
+        const matchingRows = (db.exam_results || []).filter((item: any) => {
+          if (resultId && !String(resultId).startsWith('res_temp_') && String(item.id) === String(resultId)) return true;
+          if (studentId && assignmentId && String(item.student_id || item.studentId) === String(studentId) && String(item.assignment_id || item.assignmentId) === String(assignmentId)) return true;
+          return false;
+        });
 
-        if (r) {
-          let detailsObj: any = {};
-          try {
-            detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
-          } catch (e) {}
-          detailsObj.retakeAllowed = allowRetake;
-          r.details = JSON.stringify(detailsObj);
+        if (matchingRows.length > 0) {
+          matchingRows.forEach((rItem: any) => {
+            let detailsObj: any = {};
+            try {
+              detailsObj = typeof rItem.details === 'string' ? JSON.parse(rItem.details) : (rItem.details || {});
+            } catch (e) {}
+            detailsObj.retakeAllowed = allowRetake;
+            rItem.details = JSON.stringify(detailsObj);
+          });
           saveJsonDb(db);
           return res.json({ success: true });
         } else if (studentId && assignmentId) {

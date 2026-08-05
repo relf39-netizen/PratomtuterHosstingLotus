@@ -2316,7 +2316,11 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                         {students.filter(s => (!selectedAssignment.grade || selectedAssignment.grade === 'ALL' || s.grade === selectedAssignment.grade) && (!selectedAssignment.targetClassrooms?.length || (s.classroom && selectedAssignment.targetClassrooms.includes(s.classroom)))).map(s => { 
                                             const r = localStats.filter(stat => String(stat.studentId) === String(s.id) && String(stat.assignmentId) === String(selectedAssignment.id)).sort((a,b)=>b.score - a.score)[0]; 
                                             const detailsObj = typeof r?.details === 'string' ? (() => { try { return JSON.parse(r.details); } catch(e) { return {}; } })() : (r?.details || {});
-                                            const isRetakeAllowed = !!detailsObj?.retakeAllowed;
+                                            const matchingStats = localStats.filter(stat => String(stat.studentId || (stat as any).student_id) === String(s.id) && String(stat.assignmentId || (stat as any).assignment_id) === String(selectedAssignment.id));
+                                            const isRetakeAllowed = matchingStats.some(stat => {
+                                                const detObj = typeof stat.details === 'string' ? (() => { try { return JSON.parse(stat.details); } catch(e) { return {}; } })() : (stat.details || {});
+                                                return !!detObj?.retakeAllowed;
+                                            });
                                             const retakeScore = detailsObj?.retakeScore;
                                             const retakeTotal = detailsObj?.retakeTotal;
 
