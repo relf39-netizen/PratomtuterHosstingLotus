@@ -435,7 +435,7 @@ const StatsViewer: React.FC<StatsViewerProps> = ({
                                             <h4 className="font-black text-slate-800 text-xl flex items-center gap-2">
                                                 <BarChart2 className="text-indigo-600" size={24}/> คะแนนเฉลี่ยสะสมรายวิชา
                                             </h4>
-                                            <span className="text-[10px] font-black text-slate-400 uppercase bg-white px-3 py-1 rounded-full border border-slate-100">Total Attempts: {pData.totalAttempts}</span>
+                                            <span className="text-[10px] font-black text-slate-400 uppercase bg-white px-3 py-1 rounded-full border border-slate-100">จำนวนรายวิชาที่เข้าสอบ: {pData.subjects.length} วิชา</span>
                                         </div>
                                         
                                         {pData.subjects.length === 0 ? (

@@ -642,8 +642,20 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       return true;
     });
 
-    // Group by Student ID
+    // Deduplicate stats to keep only the latest attempt per student per subject
+    const studentSubjectMap = new Map<string, ExamResult>();
     categoryStats.forEach(res => {
+      const sId = String(res.studentId).trim();
+      const subName = res.subject || 'วิชาทั่วไป';
+      const key = `${sId}_${subName}`;
+      const existing = studentSubjectMap.get(key);
+      if (!existing || Number(res.timestamp || 0) > Number(existing.timestamp || 0)) {
+        studentSubjectMap.set(key, res);
+      }
+    });
+
+    // Group by Student ID
+    Array.from(studentSubjectMap.values()).forEach(res => {
       const sId = String(res.studentId).trim();
       const st = students.find(s => String(s.id).trim() === sId);
       const stName = st ? st.name : (res.studentName || `นักเรียน ID: ${sId}`);
@@ -1032,7 +1044,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
             {summaryMetrics.passRate}%
           </div>
           <p className="text-[10px] font-bold text-slate-400 mt-2">
-            ผ่านเกณฑ์ {summaryMetrics.passCount} จาก {summaryMetrics.totalAttempts} ครั้ง
+            ผ่านเกณฑ์ {summaryMetrics.passCount} จาก {summaryMetrics.uniqueStudentsCount} คน
           </p>
         </div>
 
@@ -1045,7 +1057,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
             {summaryMetrics.uniqueStudentsCount} <span className="text-xs font-bold text-slate-400">คน</span>
           </div>
           <p className="text-[10px] font-bold text-slate-400 mt-2">
-            จำนวนครั้งการทำสอบรวม {summaryMetrics.totalAttempts} ครั้ง
+            นักเรียนเข้าสอบทั้งหมด {summaryMetrics.uniqueStudentsCount} คน
           </p>
         </div>
 
@@ -1911,7 +1923,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                   </thead>
                   <tbody>
                     <tr>
-                      <td className="border border-slate-400 p-2">{summaryMetrics.uniqueStudentsCount} คน ({summaryMetrics.totalAttempts} ครั้ง)</td>
+                      <td className="border border-slate-400 p-2">{summaryMetrics.uniqueStudentsCount} คน</td>
                       <td className="border border-slate-400 p-2 font-bold">{summaryMetrics.averagePercent}%</td>
                       <td className="border border-slate-400 p-2">{summaryMetrics.maxPercent}%</td>
                       <td className="border border-slate-400 p-2">{summaryMetrics.minPercent}%</td>

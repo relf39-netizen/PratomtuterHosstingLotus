@@ -2661,7 +2661,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                     </thead>
                     <tbody>
                       <tr>
-                        <td className="border border-slate-400 p-2">{analysisStats.uniqueStudents} คน ({analysisStats.totalAttempts} ครั้ง)</td>
+                        <td className="border border-slate-400 p-2">{analysisStats.uniqueStudents} คน</td>
                         <td className="border border-slate-400 p-2 font-bold">{analysisStats.avgPct}%</td>
                         <td className="border border-slate-400 p-2">{analysisStats.maxPct}%</td>
                         <td className="border border-slate-400 p-2">{analysisStats.minPct}%</td>
