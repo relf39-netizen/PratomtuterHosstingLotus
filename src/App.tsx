@@ -269,6 +269,7 @@ const App: React.FC = () => {
     const subjectToSave = matchedAssignment ? matchedAssignment.subject : (selectedSubject?.name || 'ทั่วไป');
 
     if (currentUser) {
+        const isRetake = !!currentAssignmentRef.current?.isRetake;
         const success = await saveScore(
           currentUser.id, 
           currentUser.name, 
@@ -279,7 +280,8 @@ const App: React.FC = () => {
           activeAssignmentId, 
           activeCategory as AssignmentCategory, 
           starsEarned,
-          details
+          details,
+          isRetake
         );
 
         if (success) {

@@ -397,6 +397,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                 <MenuCard icon={<UserPlus size={32}/>} title="จัดการนักเรียน" desc="รายชื่อและข้อมูลนักเรียน" color="from-purple-500 to-indigo-600 shadow-purple-100" onClick={()=>setActiveTab('students')}/>
                 <MenuCard icon={<Calendar size={32}/>} title="สั่งการบ้าน" desc="มอบหมายงานและติดตาม" color="from-orange-500 to-amber-600 shadow-orange-100" onClick={()=>setActiveTab('assignments')}/>
                 <MenuCard icon={<BarChart2 size={32}/>} title="ดูผลคะแนน" desc="สถิติการสอบรายบุคคล" color="from-emerald-500 to-teal-600 shadow-emerald-100" onClick={()=>setActiveTab('stats')}/>
+                <MenuCard icon={<GraduationCap size={32}/>} title="วิเคราะห์นักเรียนรายบุคคล" desc="วิเคราะห์ผลสอบกลาง/ปลายภาค & เด็กซ่อมเสริม" color="from-rose-500 via-amber-500 to-orange-600 shadow-orange-100" onClick={()=>setActiveTab('stats')}/>
                 <MenuCard icon={<FileText size={32}/>} title="คลังข้อสอบ" desc="จัดการข้อสอบในระบบ" color="from-sky-500 to-blue-600 shadow-sky-100" onClick={()=>setActiveTab('questions')}/>
                 {canAccessOnet && <MenuCard icon={<Trophy size={32}/>} title="ติวเข้ม NT/O-NET" desc="สร้างข้อสอบติว (ป.3/ป.6/ม.3)" color="from-indigo-600 to-violet-800 shadow-indigo-200" onClick={()=>setActiveTab('onet')}/>}
             </div>

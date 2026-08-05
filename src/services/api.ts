@@ -275,7 +275,8 @@ export const saveScore = async (
     assignmentId?: string, 
     category: AssignmentCategory = 'GENERAL', 
     earnedStars: number = 0, 
-    details?: any[]
+    details?: any,
+    isRetake?: boolean
 ) => {
   let dbCategory = category;
   if (category === 'MIDTERM' || category === 'FINAL') {
@@ -284,12 +285,22 @@ export const saveScore = async (
 
   try {
       await apiCall('saveScore', {
-          studentId, studentName, school, score, total, subject, assignmentId, category: dbCategory, earnedStars, details
+          studentId, studentName, school, score, total, subject, assignmentId, category: dbCategory, earnedStars, details, isRetake
       });
       return true;
   } catch (e) {
       console.error("❌ บันทึกคะแนนไม่สำเร็จ:", e);
       return false;
+  }
+};
+
+export const toggleRetakePermission = async (params: { resultId?: string; assignmentId?: string; studentId?: string; allowRetake: boolean; mode?: 'single' | 'all' }) => {
+  try {
+    const res = await apiCall('toggleRetakePermission', params);
+    return res.success;
+  } catch (e) {
+    console.error("❌ Toggle retake permission failed:", e);
+    return false;
   }
 };
 

@@ -1,11 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ExamResult, Question, Student, SubjectConfig, Teacher, Assignment } from '../types';
 import { 
   Target, BarChart3, AlertCircle, CheckCircle2, BookOpen,
   Printer, Search, Award, Users, GraduationCap,
-  Sparkles, FileText, Layers, Filter, RotateCcw, X
+  Sparkles, FileText, Layers, Filter, RotateCcw, X, Lock, Unlock, RefreshCw
 } from 'lucide-react';
+import { toggleRetakePermission } from '../services/api';
 
 interface TeacherAnalyticsProps {
   stats: ExamResult[];
@@ -90,6 +91,74 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
   const [activeTab, setActiveTab] = useState<'INDIVIDUAL_STUDENT' | 'ANALYTICS' | 'SCORES'>('INDIVIDUAL_STUDENT');
   const [individualSubTab, setIndividualSubTab] = useState<'MIDTERM' | 'FINAL'>('MIDTERM');
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+
+  const [localStats, setLocalStats] = useState<ExamResult[]>(stats);
+
+  useEffect(() => {
+    setLocalStats(stats);
+  }, [stats]);
+
+  const handleToggleRetake = async (r: ExamResult, allowRetake: boolean) => {
+    if (!r) return;
+    const success = await toggleRetakePermission({
+      resultId: r.id,
+      assignmentId: r.assignmentId || undefined,
+      studentId: r.studentId,
+      allowRetake,
+      mode: 'single'
+    });
+
+    if (success) {
+      setLocalStats(prev => prev.map(item => {
+        if (String(item.id) === String(r.id)) {
+          const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
+          detObj.retakeAllowed = allowRetake;
+          return { ...item, details: detObj };
+        }
+        return item;
+      }));
+    }
+  };
+
+  const handleBatchToggleRetake = async (allowRetake: boolean) => {
+    if (selectedAssignmentId !== 'ALL') {
+      const success = await toggleRetakePermission({
+        assignmentId: selectedAssignmentId,
+        allowRetake,
+        mode: 'all'
+      });
+
+      if (success) {
+        setLocalStats(prev => prev.map(item => {
+          if (String(item.assignmentId) === String(selectedAssignmentId)) {
+            const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
+            detObj.retakeAllowed = allowRetake;
+            return { ...item, details: detObj };
+          }
+          return item;
+        }));
+      }
+    } else {
+      // Toggle for all filtered stats
+      for (const r of filteredStats) {
+        await toggleRetakePermission({
+          resultId: r.id,
+          assignmentId: r.assignmentId || undefined,
+          studentId: r.studentId,
+          allowRetake,
+          mode: 'single'
+        });
+      }
+      setLocalStats(prev => prev.map(item => {
+        if (filteredStats.some(f => String(f.id) === String(item.id))) {
+          const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
+          detObj.retakeAllowed = allowRetake;
+          return { ...item, details: detObj };
+        }
+        return item;
+      }));
+    }
+  };
 
   // 1. Determine teacher's assigned grades & classrooms
   const teacherClassrooms = useMemo(() => {
@@ -279,7 +348,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
 
   // Filter stats according to active filters
   const filteredStats = useMemo(() => {
-    return stats.filter(res => {
+    return localStats.filter(res => {
       if (!isStudentInTeacherScope(res.studentId)) return false;
 
       if (selectedSubject !== 'ALL' && res.subject !== selectedSubject) {
@@ -534,6 +603,12 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       pct: number;
       isPass: boolean;
       details?: any;
+      retakeScore?: number;
+      retakeTotal?: number;
+      retakePct?: number;
+      isRetakePassed?: boolean;
+      retakeAllowed?: boolean;
+      resultObj?: ExamResult;
     }
 
     interface StudentRecord {
@@ -555,7 +630,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     const targetStudentsMap = new Map<string, StudentRecord>();
 
     // Filter stats matching current individual sub tab (MIDTERM or FINAL)
-    const categoryStats = stats.filter(res => {
+    const categoryStats = localStats.filter(res => {
       const cat = getResultCategory(res);
       if (cat !== individualSubTab) return false;
 
@@ -597,12 +672,25 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       const totalQ = res.totalQuestions || 1;
       const pct = Math.round((res.score / totalQ) * 100);
 
+      const detailsObj = typeof res.details === 'string' ? (() => { try { return JSON.parse(res.details); } catch(e) { return res.details; } })() : res.details;
+      const retakeScoreVal = detailsObj?.retakeScore;
+      const retakeTotalVal = detailsObj?.retakeTotal || totalQ;
+      const retakePct = retakeScoreVal !== undefined ? Math.round((retakeScoreVal / retakeTotalVal) * 100) : undefined;
+      const isRetakePassed = retakePct !== undefined ? retakePct >= 50 : false;
+      const finalPass = pct >= 50 || isRetakePassed;
+
       stData.subjectScores[subName] = {
         score: res.score,
         total: totalQ,
         pct: pct,
-        isPass: pct >= 50,
-        details: res.details
+        isPass: finalPass,
+        details: res.details,
+        retakeScore: retakeScoreVal,
+        retakeTotal: retakeTotalVal,
+        retakePct: retakePct,
+        isRetakePassed: isRetakePassed,
+        retakeAllowed: !!detailsObj?.retakeAllowed,
+        resultObj: res
       };
     });
 
@@ -1181,20 +1269,43 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         {subNames.map((sub, i) => {
                           const item = st.subjectScores[sub];
                           return (
-                            <div key={i} className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between ${item.isPass ? 'bg-white border-slate-200' : 'bg-rose-50/60 border-rose-200'}`}>
-                              <div>
-                                <div className="font-black text-xs text-slate-800">{sub}</div>
-                                <div className="text-[10px] font-bold text-slate-400 mt-0.5">
-                                  คะแนนเต็ม {item.total} ข้อ
+                            <div key={i} className={`p-3.5 rounded-2xl border transition-all space-y-2 ${item.isPass ? 'bg-white border-slate-200' : 'bg-rose-50/60 border-rose-200'}`}>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="font-black text-xs text-slate-800">{sub}</div>
+                                  <div className="text-[10px] font-bold text-slate-400 mt-0.5">
+                                    คะแนนเต็ม {item.total} ข้อ
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className={`font-black text-sm ${item.isPass ? 'text-indigo-600' : 'text-rose-600'}`}>
+                                    {item.score} / {item.total}
+                                  </div>
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${item.pct >= 50 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                    {item.pct}% ({item.pct >= 50 ? 'ผ่าน' : 'เดิมไม่ผ่าน'})
+                                  </span>
+                                  {item.retakeScore !== undefined && (
+                                    <div className="mt-1">
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${item.isRetakePassed ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' : 'bg-amber-100 text-amber-800'}`}>
+                                        แก้ตัว: {item.retakeScore}/{item.retakeTotal} ({item.retakePct}%) {item.isRetakePassed ? '✓ ผ่าน' : 'ไม่ผ่าน'}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               </div>
-                              <div className="text-right">
-                                <div className={`font-black text-sm ${item.isPass ? 'text-indigo-600' : 'text-rose-600'}`}>
-                                  {item.score} / {item.total}
-                                </div>
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${item.isPass ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                                  {item.pct}% ({item.isPass ? 'ผ่าน' : 'ไม่ผ่าน'})
+
+                              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2">
+                                <span className="text-[10px] font-bold text-slate-500">
+                                  สอบแก้ตัว: {item.retakeAllowed ? <span className="text-emerald-600 font-black">🔓 เปิดสิทธิ์แล้ว</span> : <span className="text-slate-400 font-bold">🔒 ปิดอยู่</span>}
                                 </span>
+                                {item.resultObj && (
+                                  <button
+                                    onClick={() => handleToggleRetake(item.resultObj!, !item.retakeAllowed)}
+                                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition active:scale-95 shadow flex items-center gap-1 ${item.retakeAllowed ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                                  >
+                                    {item.retakeAllowed ? '🔒 ปิดสอบแก้ตัว' : '🔓 เปิดให้สอบแก้ตัว'}
+                                  </button>
+                                )}
                               </div>
                             </div>
                           );
@@ -1487,9 +1598,23 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                 {selectedTopic !== 'ALL' ? `แสดงคะแนนเฉพาะหน่วยการเรียนรู้: "${selectedTopic}"` : `พิจารณาตามห้องเรียนที่คุณครูสอน (${filteredStats.length} รายการผลสอบ)`}
               </p>
             </div>
-            <button onClick={handleTriggerPrint} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-2xl flex items-center gap-2 transition shadow-md">
-              <Printer size={16}/> พิมพ์ใบคะแนน
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => handleBatchToggleRetake(true)}
+                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow transition active:scale-95 flex items-center gap-1.5"
+              >
+                🔓 เปิดสอบแก้ตัวทั้งหมด ({filteredStats.length})
+              </button>
+              <button
+                onClick={() => handleBatchToggleRetake(false)}
+                className="px-3.5 py-2 bg-slate-700 hover:bg-slate-800 text-white text-xs font-black rounded-xl shadow transition active:scale-95 flex items-center gap-1.5"
+              >
+                🔒 ปิดสอบแก้ตัวทั้งหมด
+              </button>
+              <button onClick={handleTriggerPrint} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-xl flex items-center gap-1.5 transition shadow">
+                <Printer size={16}/> พิมพ์ใบคะแนน
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1502,6 +1627,8 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                   <th className="p-4 text-center">ประเภทการสอบ</th>
                   <th className="p-4 text-center">คะแนนที่ได้</th>
                   <th className="p-4 text-center">คิดเป็น %</th>
+                  <th className="p-4 text-center">ผลการสอบแก้ตัว</th>
+                  <th className="p-4 text-center">สิทธิ์สอบแก้ตัว (คุณครูเปิด/ปิด)</th>
                   <th className="p-4 text-center">ผลการประเมิน</th>
                   <th className="p-4 text-right">วันที่ทำสอบ</th>
                 </tr>
@@ -1537,7 +1664,15 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                   }
 
                   const pct = Math.round((scoreVal / totalVal) * 100);
-                  const isPass = pct >= 50;
+
+                  const detailsObj = typeof r.details === 'string' ? (() => { try { return JSON.parse(r.details); } catch(e) { return r.details; } })() : r.details;
+                  const isMidtermOrFinal = cat === 'MIDTERM' || cat === 'FINAL';
+                  const retakeScoreVal = detailsObj?.retakeScore;
+                  const retakeTotalVal = detailsObj?.retakeTotal || totalVal;
+                  const retakePct = retakeScoreVal !== undefined ? Math.round((retakeScoreVal / retakeTotalVal) * 100) : undefined;
+                  const retakePass = retakePct !== undefined ? retakePct >= 50 : false;
+                  const finalPass = pct >= 50 || retakePass;
+                  const isRetakeAllowed = !!detailsObj?.retakeAllowed;
 
                   return (
                     <tr key={r.id || i} className="hover:bg-slate-50 transition">
@@ -1567,8 +1702,33 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         {pct}%
                       </td>
                       <td className="p-4 text-center">
-                        <span className={`px-3 py-1 rounded-full text-[10px] font-black ${isPass ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
-                          {isPass ? 'ผ่านเกณฑ์' : 'ควรพัฒนา'}
+                        {isMidtermOrFinal ? (
+                          retakeScoreVal !== undefined ? (
+                            <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${retakePass ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                              แก้ตัว: {retakeScoreVal}/{retakeTotalVal} ({retakePct}%) {retakePass ? 'ผ่าน' : 'ไม่ผ่าน'}
+                            </span>
+                          ) : pct < 50 ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-50 text-amber-700 border border-amber-200">
+                              ยังไม่สอบแก้ตัว
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-medium text-xs">-</span>
+                          )
+                        ) : (
+                          <span className="text-slate-300 font-medium text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="p-4 text-center">
+                        <button
+                          onClick={() => handleToggleRetake(r, !isRetakeAllowed)}
+                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black transition active:scale-95 shadow-sm flex items-center gap-1 mx-auto ${isRetakeAllowed ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
+                        >
+                          {isRetakeAllowed ? '🔒 ปิดสอบแก้ตัว' : '🔓 เปิดให้สอบแก้ตัว'}
+                        </button>
+                      </td>
+                      <td className="p-4 text-center">
+                        <span className={`px-3 py-1 rounded-full text-[10px] font-black ${finalPass ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                          {finalPass ? (retakePass ? 'ผ่าน (สอบแก้ตัว)' : 'ผ่านเกณฑ์') : 'ควรพัฒนา'}
                         </span>
                       </td>
                       <td className="p-4 text-right text-slate-400 text-[11px]">
@@ -1816,6 +1976,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                       <th className="border border-slate-400 p-1.5 w-20">ประเภท</th>
                       <th className="border border-slate-400 p-1.5 w-20">คะแนนที่ได้</th>
                       <th className="border border-slate-400 p-1.5 w-16">ร้อยละ (%)</th>
+                      <th className="border border-slate-400 p-1.5 w-24">ผลการสอบแก้ตัว</th>
                       <th className="border border-slate-400 p-1.5 w-20">ผลการประเมิน</th>
                       <th className="border border-slate-400 p-1.5 w-24">วันที่ทำสอบ</th>
                     </tr>
@@ -1851,7 +2012,14 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                       }
 
                       const pct = Math.round((scoreVal / totalVal) * 100);
-                      const isPass = pct >= 50;
+
+                      const detailsObj = typeof r.details === 'string' ? (() => { try { return JSON.parse(r.details); } catch(e) { return r.details; } })() : r.details;
+                      const isMidtermOrFinal = cat === 'MIDTERM' || cat === 'FINAL';
+                      const retakeScoreVal = detailsObj?.retakeScore;
+                      const retakeTotalVal = detailsObj?.retakeTotal || totalVal;
+                      const retakePct = retakeScoreVal !== undefined ? Math.round((retakeScoreVal / retakeTotalVal) * 100) : undefined;
+                      const retakePass = retakePct !== undefined ? retakePct >= 50 : false;
+                      const finalPass = pct >= 50 || retakePass;
 
                       return (
                         <tr key={r.id || idx}>
@@ -1870,8 +2038,21 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                           </td>
                           <td className="border border-slate-400 p-1.5 text-center font-bold">{scoreVal} / {totalVal}</td>
                           <td className="border border-slate-400 p-1.5 text-center font-bold">{pct}%</td>
+                          <td className="border border-slate-400 p-1.5 text-center font-bold text-[10px]">
+                            {isMidtermOrFinal ? (
+                              retakeScoreVal !== undefined ? (
+                                `${retakeScoreVal}/${retakeTotalVal} (${retakePct}%) ${retakePass ? 'ผ่าน' : 'ไม่ผ่าน'}`
+                              ) : pct < 50 ? (
+                                'ยังไม่สอบแก้ตัว'
+                              ) : (
+                                '-'
+                              )
+                            ) : (
+                              '-'
+                            )}
+                          </td>
                           <td className="border border-slate-400 p-1.5 text-center font-bold">
-                            {isPass ? 'ผ่านเกณฑ์' : 'ควรพัฒนา'}
+                            {finalPass ? (retakePass ? 'ผ่าน (แก้ตัว)' : 'ผ่านเกณฑ์') : 'ควรพัฒนา'}
                           </td>
                           <td className="border border-slate-400 p-1.5 text-center text-[10px] text-slate-600">
                             {formatThaiDate(r.timestamp)}
@@ -1881,7 +2062,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                     })}
                     {filteredStats.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="border border-slate-400 p-4 text-center italic text-slate-500">
+                        <td colSpan={10} className="border border-slate-400 p-4 text-center italic text-slate-500">
                           ไม่มีข้อมูลผลคะแนนรายบุคคลในเงื่อนไขที่เลือก
                         </td>
                       </tr>

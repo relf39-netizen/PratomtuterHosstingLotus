@@ -349,26 +349,61 @@ app.post('/api', async (req, res) => {
         }
 
         case 'saveScore': {
-          const { studentId, studentName, school, score, total, subject, assignmentId, category, earnedStars, details } = args;
+          const { studentId, studentName, school, score, total, subject, assignmentId, category, earnedStars, details, isRetake } = args;
           let updated = false;
           if (assignmentId) {
             const existingRows = await query(
-              'SELECT id FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1',
+              'SELECT id, details FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1',
               [studentId, assignmentId]
             );
             if (existingRows && existingRows.length > 0) {
-              await query(
-                'UPDATE exam_results SET score = ?, total_questions = ?, subject = ?, category = ?, timestamp = ?, details = ? WHERE id = ?',
-                [score, total, subject, category, Date.now(), details ? JSON.stringify(details) : null, existingRows[0].id]
-              );
-              updated = true;
+              let existingDetails: any = {};
+              try {
+                existingDetails = existingRows[0].details ? JSON.parse(existingRows[0].details) : {};
+              } catch (e) {}
+
+              if (isRetake || (details && details.isRetake)) {
+                const retakeData = {
+                  ...(typeof existingDetails === 'object' && !Array.isArray(existingDetails) ? existingDetails : { answers: existingDetails }),
+                  isRetake: true,
+                  retakeAllowed: false, // Reset retake status on submission
+                  retakeScore: score,
+                  retakeTotal: total,
+                  retakeTimestamp: Date.now(),
+                  isRetakePassed: (score / (total || 1)) >= 0.5,
+                  retakeDetails: details
+                };
+                await query(
+                  'UPDATE exam_results SET details = ? WHERE id = ?',
+                  [JSON.stringify(retakeData), existingRows[0].id]
+                );
+                updated = true;
+              } else {
+                await query(
+                  'UPDATE exam_results SET score = ?, total_questions = ?, subject = ?, category = ?, timestamp = ?, details = ? WHERE id = ?',
+                  [score, total, subject, category, Date.now(), details ? JSON.stringify(details) : null, existingRows[0].id]
+                );
+                updated = true;
+              }
             }
           }
 
           if (!updated) {
+            let finalDetails = details;
+            if (isRetake || (details && details.isRetake)) {
+              finalDetails = {
+                isRetake: true,
+                retakeAllowed: false,
+                retakeScore: score,
+                retakeTotal: total,
+                retakeTimestamp: Date.now(),
+                isRetakePassed: (score / (total || 1)) >= 0.5,
+                answers: details
+              };
+            }
             await query(
               'INSERT INTO exam_results (student_id, student_name, school, score, total_questions, subject, assignment_id, category, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-              [studentId, studentName, school, score, total, subject, assignmentId || null, category, Date.now(), details ? JSON.stringify(details) : null]
+              [studentId, studentName, school, score, total, subject, assignmentId || null, category, Date.now(), finalDetails ? JSON.stringify(finalDetails) : null]
             );
           }
 
@@ -376,6 +411,45 @@ app.post('/api', async (req, res) => {
             await query('UPDATE students SET stars = stars + ? WHERE id = ?', [earnedStars, studentId]);
           }
           return res.json({ success: true });
+        }
+
+        case 'toggleRetakePermission': {
+          const { resultId, assignmentId, studentId, allowRetake, mode } = args;
+          if (mode === 'all' && assignmentId) {
+            const rows = await query('SELECT id, details FROM exam_results WHERE assignment_id = ?', [assignmentId]);
+            for (const r of rows) {
+              let detailsObj: any = {};
+              try {
+                detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
+              } catch (e) {}
+              detailsObj.retakeAllowed = allowRetake;
+              await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), r.id]);
+            }
+            return res.json({ success: true });
+          } else if (resultId) {
+            const rows = await query('SELECT id, details FROM exam_results WHERE id = ? LIMIT 1', [resultId]);
+            if (rows && rows.length > 0) {
+              let detailsObj: any = {};
+              try {
+                detailsObj = typeof rows[0].details === 'string' ? JSON.parse(rows[0].details) : (rows[0].details || {});
+              } catch (e) {}
+              detailsObj.retakeAllowed = allowRetake;
+              await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), rows[0].id]);
+              return res.json({ success: true });
+            }
+          } else if (studentId && assignmentId) {
+            const rows = await query('SELECT id, details FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1', [studentId, assignmentId]);
+            if (rows && rows.length > 0) {
+              let detailsObj: any = {};
+              try {
+                detailsObj = typeof rows[0].details === 'string' ? JSON.parse(rows[0].details) : (rows[0].details || {});
+              } catch (e) {}
+              detailsObj.retakeAllowed = allowRetake;
+              await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), rows[0].id]);
+              return res.json({ success: true });
+            }
+          }
+          return res.json({ success: false });
         }
 
         case 'verifyStudentLogin': {

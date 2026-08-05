@@ -128,6 +128,50 @@ const Dashboard: React.FC<DashboardProps> = ({
       ]
   };
 
+  const retakeAssignments = useMemo(() => {
+    const currentStudentId = String(student.id).trim();
+    const studentResults = examResults.filter(r => String(r.studentId).trim() === currentStudentId);
+
+    const retakes: { assignment: Assignment; initialScore: number; initialTotal: number; initialPct: number; retakeScore?: number; retakeTotal?: number; retakePct?: number; isRetakePassed?: boolean }[] = [];
+
+    studentResults.forEach(res => {
+      if (!res.assignmentId) return;
+      const ass = assignments.find(a => String(a.id).trim() === String(res.assignmentId).trim());
+      if (!ass) return;
+
+      const cat = ass.category || res.category;
+      const isMidtermOrFinal = cat === 'MIDTERM' || cat === 'FINAL' || (ass.title && (ass.title.includes('กลางภาค') || ass.title.includes('ปลายภาค')));
+      if (!isMidtermOrFinal) return;
+
+      const totalQ = res.totalQuestions || 1;
+      const initialPct = Math.round((res.score / totalQ) * 100);
+
+      const detailsObj = typeof res.details === 'string' ? (() => { try { return JSON.parse(res.details); } catch(e) { return res.details; } })() : res.details;
+      const retakeScoreVal = detailsObj?.retakeScore;
+      const retakeTotalVal = detailsObj?.retakeTotal || totalQ;
+      const retakePct = retakeScoreVal !== undefined ? Math.round((retakeScoreVal / retakeTotalVal) * 100) : undefined;
+      const isRetakePassed = retakePct !== undefined ? retakePct >= 50 : false;
+
+      // Eligible for retake ONLY if teacher explicitly unlocked/opened retake for this student (retakeAllowed === true)
+      const isRetakeAllowed = !!detailsObj?.retakeAllowed;
+
+      if (isRetakeAllowed) {
+        retakes.push({
+          assignment: ass,
+          initialScore: res.score,
+          initialTotal: totalQ,
+          initialPct,
+          retakeScore: retakeScoreVal,
+          retakeTotal: retakeTotalVal,
+          retakePct,
+          isRetakePassed
+        });
+      }
+    });
+
+    return retakes;
+  }, [examResults, assignments, student.id]);
+
   const doneAssignmentIds = useMemo(() => {
     const currentStudentId = String(student.id).trim();
     return new Set(
@@ -363,6 +407,49 @@ const Dashboard: React.FC<DashboardProps> = ({
             </div>
         </div>
       </div>
+
+      {/* 🔄 รายการสอบแก้ตัว (เฉพาะสอบกลางภาคและปลายภาคที่ไม่ผ่าน) */}
+      {retakeAssignments.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="text-base font-black text-rose-600 flex items-center gap-2 px-1">
+            <RefreshCw className="animate-spin text-rose-500" size={20}/> 🎯 รายการสอบแก้ตัว (กลางภาค/ปลายภาค)
+          </h3>
+          <div className="space-y-3">
+            {retakeAssignments.map(item => (
+              <div key={item.assignment.id} className="p-4 rounded-[30px] border-2 border-rose-200 border-b-[10px] bg-rose-50/40 shadow-lg flex justify-between items-center gap-4 transition-all hover:-translate-y-0.5">
+                <div className="flex items-center gap-4 min-w-0 flex-1">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-100 text-rose-600 flex items-center justify-center shadow-inner flex-shrink-0 font-black text-lg">
+                    🔄
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 bg-rose-100 text-rose-700 font-black text-[9px] rounded-md uppercase">สอบแก้ตัว</span>
+                      <h4 className="font-black text-slate-800 truncate leading-tight">
+                        {item.assignment.title || item.assignment.subject}
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-slate-600 font-bold mt-1">
+                      คะแนนเดิม: <span className="text-rose-600 font-black">{item.initialScore}/{item.initialTotal} ({item.initialPct}%)</span>
+                      {item.retakeScore !== undefined && (
+                        <span className="ml-2 text-amber-600 font-black">
+                          | สอบแก้ตัวล่าสุด: {item.retakeScore}/{item.retakeTotal} ({item.retakePct}%)
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => onStartAssignment?.({ ...item.assignment, isRetake: true })}
+                  className="px-5 py-2.5 rounded-xl font-black text-xs shadow-md transition active:scale-95 text-white bg-rose-600 hover:bg-rose-500 border-b-4 border-rose-900 flex items-center gap-1.5 flex-shrink-0"
+                >
+                  🎯 เริ่มสอบแก้ตัว
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ภารกิจวันนี้ (Assignments & Missions) */}
       <div className="space-y-3">

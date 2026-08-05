@@ -133,6 +133,7 @@ export interface Assignment {
   category?: AssignmentCategory; 
   status?: 'LOCKED' | 'OPEN'; 
   timeLimit?: number; // in minutes
+  isRetake?: boolean;
 }
 
 export interface Reward {
