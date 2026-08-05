@@ -7,14 +7,14 @@ import {
   Eye, Trash2, Loader2, Clock, X, FileText, 
   Sparkles, PlusCircle, History, 
   Users, Info, UploadCloud, Download, 
-  Settings, ClipboardCheck, BookOpen, GraduationCap, Lock,
+  Settings, ClipboardCheck, BookOpen, GraduationCap, Lock, Unlock,
   Printer, Layers, BarChart3, Target, Award, TrendingUp, Search
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, 
   Tooltip, ResponsiveContainer, Cell, Legend
 } from 'recharts';
-import { addAssignment, deleteAssignment, addQuestion, getQuestionsByAssignment, getClassrooms, getQuestionsBySubjectAndGrade, toggleAssignmentStatus } from '../../services/api';
+import { addAssignment, deleteAssignment, addQuestion, getQuestionsByAssignment, getClassrooms, getQuestionsBySubjectAndGrade, toggleAssignmentStatus, toggleRetakePermission } from '../../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../../services/aiService';
 
 // ประกาศ XLSX สำหรับระบบ Import
@@ -98,6 +98,74 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
   const [examQuestions, setExamQuestions] = useState<Question[]>([]);
   const [loadingQuestions, setLoadingQuestions] = useState(false);
   const [allClassrooms, setAllClassrooms] = useState<Classroom[]>([]);
+  const [localStats, setLocalStats] = useState<ExamResult[]>(stats);
+
+  useEffect(() => {
+    setLocalStats(stats);
+  }, [stats]);
+
+  const handleToggleRetakeForStudent = async (assignmentId: string, studentId: string, r: ExamResult | undefined, allowRetake: boolean) => {
+    const res = await toggleRetakePermission({
+      resultId: r?.id,
+      assignmentId,
+      studentId,
+      allowRetake,
+      mode: 'single'
+    });
+
+    if (res) {
+      setLocalStats(prev => {
+        let found = false;
+        const updated = prev.map(item => {
+          if ((r && String(item.id) === String(r.id)) || (String(item.studentId) === String(studentId) && String(item.assignmentId) === String(assignmentId))) {
+            found = true;
+            const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
+            detObj.retakeAllowed = allowRetake;
+            return { ...item, details: detObj };
+          }
+          return item;
+        });
+
+        if (!found) {
+          return [
+            ...prev,
+            {
+              id: 'res_temp_' + studentId + '_' + Date.now(),
+              studentId,
+              assignmentId,
+              score: 0,
+              totalQuestions: 0,
+              subject: '',
+              timestamp: Date.now(),
+              details: { retakeAllowed: allowRetake }
+            }
+          ];
+        }
+        return updated;
+      });
+      onRefresh();
+    }
+  };
+
+  const handleBatchToggleRetakeForAssignment = async (assignmentId: string, allowRetake: boolean) => {
+    const res = await toggleRetakePermission({
+      assignmentId,
+      allowRetake,
+      mode: 'all'
+    });
+
+    if (res) {
+      setLocalStats(prev => prev.map(item => {
+        if (String(item.assignmentId) === String(assignmentId)) {
+          const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
+          detObj.retakeAllowed = allowRetake;
+          return { ...item, details: detObj };
+        }
+        return item;
+      }));
+      onRefresh();
+    }
+  };
 
   useEffect(() => {
       const fetchRooms = async () => {
@@ -2191,24 +2259,92 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
 
                     <div className="p-0 flex-1 overflow-auto bg-white custom-scrollbar mt-4">
                         {modalTab === 'SCORES' ? (
-                            <table className="w-full text-base text-left">
-                                <thead className="bg-slate-50 text-slate-500 font-black sticky top-0 shadow-sm uppercase text-[10px] tracking-widest">
-                                    <tr><th className="p-8">ชื่อนักเรียน</th><th className="p-8 text-center">ห้อง</th><th className="p-8 text-center">สถานะ</th><th className="p-8 text-right">คะแนน</th></tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {students.filter(s => (!selectedAssignment.grade || selectedAssignment.grade === 'ALL' || s.grade === selectedAssignment.grade) && (!selectedAssignment.targetClassrooms?.length || (s.classroom && selectedAssignment.targetClassrooms.includes(s.classroom)))).map(s => { 
-                                        const r = stats.filter(stat => String(stat.studentId) === String(s.id) && stat.assignmentId === selectedAssignment.id).sort((a,b)=>b.score - a.score)[0]; 
-                                        return (
-                                            <tr key={s.id} className="hover:bg-slate-50 transition">
-                                                <td className="p-8 flex items-center gap-4"><span className="text-4xl bg-slate-50 p-2 rounded-2xl shadow-inner">{s.avatar}</span><span className="font-black text-slate-700 text-lg">{s.name}</span></td>
-                                                <td className="p-8 text-center text-slate-500 font-black">ห้อง {s.classroom}</td>
-                                                <td className="p-8 text-center">{r ? <span className="bg-emerald-50 text-emerald-600 px-5 py-1.5 rounded-full text-xs font-black border border-emerald-100 shadow-sm">ส่งแล้ว</span> : <span className="text-slate-400 italic font-bold">ยังไม่ส่ง</span>}</td>
-                                                <td className="p-8 text-right font-black text-indigo-600 text-3xl">{r ? `${r.score}/${r.totalQuestions}` : '-'}</td>
-                                            </tr> 
-                                        ) 
-                                    })}
-                                </tbody>
-                            </table>
+                            <div className="space-y-2">
+                                <div className="px-8 py-3 bg-slate-50 border-b flex flex-wrap items-center justify-between gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <Sparkles size={18} className="text-indigo-600"/>
+                                        <span className="text-xs font-black text-slate-700">เปิด/ปิดสิทธิ์สอบแก้ตัวทั้งชุด:</span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            type="button" 
+                                            onClick={() => handleBatchToggleRetakeForAssignment(selectedAssignment.id, true)}
+                                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-sm"
+                                        >
+                                            <Unlock size={14}/> อนุญาตให้สอบแก้ตัวทั้งหมด
+                                        </button>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => handleBatchToggleRetakeForAssignment(selectedAssignment.id, false)}
+                                            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition shadow-sm"
+                                        >
+                                            <Lock size={14}/> ปิดสอบแก้ตัวทั้งหมด
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <table className="w-full text-base text-left">
+                                    <thead className="bg-slate-50 text-slate-500 font-black sticky top-0 shadow-sm uppercase text-[10px] tracking-widest">
+                                        <tr>
+                                            <th className="p-6">ชื่อนักเรียน</th>
+                                            <th className="p-6 text-center">ห้อง</th>
+                                            <th className="p-6 text-center">สถานะ</th>
+                                            <th className="p-6 text-right">คะแนน</th>
+                                            <th className="p-6 text-center">สิทธิ์สอบแก้ตัว</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {students.filter(s => (!selectedAssignment.grade || selectedAssignment.grade === 'ALL' || s.grade === selectedAssignment.grade) && (!selectedAssignment.targetClassrooms?.length || (s.classroom && selectedAssignment.targetClassrooms.includes(s.classroom)))).map(s => { 
+                                            const r = localStats.filter(stat => String(stat.studentId) === String(s.id) && String(stat.assignmentId) === String(selectedAssignment.id)).sort((a,b)=>b.score - a.score)[0]; 
+                                            const detailsObj = typeof r?.details === 'string' ? (() => { try { return JSON.parse(r.details); } catch(e) { return {}; } })() : (r?.details || {});
+                                            const isRetakeAllowed = !!detailsObj?.retakeAllowed;
+                                            const retakeScore = detailsObj?.retakeScore;
+                                            const retakeTotal = detailsObj?.retakeTotal;
+
+                                            return (
+                                                <tr key={s.id} className="hover:bg-slate-50 transition">
+                                                    <td className="p-6 flex items-center gap-4">
+                                                        <span className="text-4xl bg-slate-50 p-2 rounded-2xl shadow-inner">{s.avatar}</span>
+                                                        <span className="font-black text-slate-700 text-lg">{s.name}</span>
+                                                    </td>
+                                                    <td className="p-6 text-center text-slate-500 font-black">ห้อง {s.classroom}</td>
+                                                    <td className="p-6 text-center">
+                                                        {r && r.score !== undefined ? (
+                                                            <span className="bg-emerald-50 text-emerald-600 px-4 py-1.5 rounded-full text-xs font-black border border-emerald-100 shadow-sm">ส่งแล้ว</span>
+                                                        ) : (
+                                                            <span className="text-slate-400 italic font-bold">ยังไม่ส่ง</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-6 text-right font-black text-indigo-600 text-2xl">
+                                                        {r ? (
+                                                            <div>
+                                                                <div>{r.score}/{r.totalQuestions}</div>
+                                                                {retakeScore !== undefined && (
+                                                                    <div className="text-xs text-amber-600 font-bold mt-0.5">แก้ตัว: {retakeScore}/{retakeTotal || r.totalQuestions}</div>
+                                                                )}
+                                                            </div>
+                                                        ) : '-'}
+                                                    </td>
+                                                    <td className="p-6 text-center">
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => handleToggleRetakeForStudent(selectedAssignment.id, s.id, r, !isRetakeAllowed)}
+                                                            className={`px-3 py-2 rounded-xl text-xs font-black flex items-center justify-center gap-1.5 transition shadow-sm mx-auto border ${
+                                                                isRetakeAllowed 
+                                                                    ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600' 
+                                                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                                                            }`}
+                                                            title={isRetakeAllowed ? 'คลิกเพื่อปิดสิทธิ์สอบแก้ตัว' : 'คลิกเพื่ออนุญาตให้สอบแก้ตัว'}
+                                                        >
+                                                            {isRetakeAllowed ? <><Unlock size={14}/> อนุญาตสอบแก้ตัว</> : <><Lock size={14}/> ไม่อนุญาต</>}
+                                                        </button>
+                                                    </td>
+                                                </tr> 
+                                            ) 
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
                         ) : (
                             <div className="p-10 space-y-6">
                                 {loadingQuestions ? (
