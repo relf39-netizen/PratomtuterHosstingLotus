@@ -87,7 +87,8 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
   const [selectedAssignmentId, setSelectedAssignmentId] = useState<string>('ALL');
   const [selectedTopic, setSelectedTopic] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<'ANALYTICS' | 'SCORES'>('ANALYTICS');
+  const [activeTab, setActiveTab] = useState<'INDIVIDUAL_STUDENT' | 'ANALYTICS' | 'SCORES'>('INDIVIDUAL_STUDENT');
+  const [individualSubTab, setIndividualSubTab] = useState<'MIDTERM' | 'FINAL'>('MIDTERM');
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
 
   // 1. Determine teacher's assigned grades & classrooms
@@ -525,6 +526,189 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     };
   }, [filteredStats, questions, selectedTopic]);
 
+  // 🎓 Compute Individual Student Analysis for Midterm and Final
+  const individualStudentAnalysis = useMemo(() => {
+    interface SubjectScoreItem {
+      score: number;
+      total: number;
+      pct: number;
+      isPass: boolean;
+      details?: any;
+    }
+
+    interface StudentRecord {
+      student: Student | undefined;
+      studentId: string;
+      studentName: string;
+      classroom: string;
+      subjectScores: Record<string, SubjectScoreItem>;
+      totalScore: number;
+      totalPossible: number;
+      avgPct: number;
+      passCount: number;
+      totalSubjects: number;
+      evaluationGrade: { label: string; color: string; badgeBg: string; desc: string; icon: string };
+      needsIntervention: boolean;
+      weakSubjects: string[];
+    }
+
+    const targetStudentsMap = new Map<string, StudentRecord>();
+
+    // Filter stats matching current individual sub tab (MIDTERM or FINAL)
+    const categoryStats = stats.filter(res => {
+      const cat = getResultCategory(res);
+      if (cat !== individualSubTab) return false;
+
+      // Filter by selected classroom if specified
+      const st = students.find(s => String(s.id).trim() === String(res.studentId).trim());
+      if (selectedClassroom !== 'ALL' && st) {
+        if (`${st.grade}/${st.classroom}` !== selectedClassroom && String(st.classroom) !== selectedClassroom) return false;
+      }
+      return true;
+    });
+
+    // Group by Student ID
+    categoryStats.forEach(res => {
+      const sId = String(res.studentId).trim();
+      const st = students.find(s => String(s.id).trim() === sId);
+      const stName = st ? st.name : (res.studentName || `นักเรียน ID: ${sId}`);
+      const stRoom = st ? `${GRADE_LABELS[st.grade || ''] || st.grade}/${st.classroom}` : 'ทั่วไป';
+
+      if (!targetStudentsMap.has(sId)) {
+        targetStudentsMap.set(sId, {
+          student: st,
+          studentId: sId,
+          studentName: stName,
+          classroom: stRoom,
+          subjectScores: {},
+          totalScore: 0,
+          totalPossible: 0,
+          avgPct: 0,
+          passCount: 0,
+          totalSubjects: 0,
+          evaluationGrade: { label: 'ควรได้รับการพัฒนา', color: 'text-rose-600', badgeBg: 'bg-rose-100 text-rose-800', desc: '', icon: '🔴' },
+          needsIntervention: false,
+          weakSubjects: []
+        });
+      }
+
+      const stData = targetStudentsMap.get(sId)!;
+      const subName = res.subject || 'วิชาทั่วไป';
+      const totalQ = res.totalQuestions || 1;
+      const pct = Math.round((res.score / totalQ) * 100);
+
+      stData.subjectScores[subName] = {
+        score: res.score,
+        total: totalQ,
+        pct: pct,
+        isPass: pct >= 50,
+        details: res.details
+      };
+    });
+
+    const resultList: StudentRecord[] = [];
+
+    targetStudentsMap.forEach(stData => {
+      const subjects = Object.keys(stData.subjectScores);
+      stData.totalSubjects = subjects.length;
+
+      let sumScore = 0;
+      let sumPossible = 0;
+      let passC = 0;
+      const weakSubs: string[] = [];
+
+      subjects.forEach(sub => {
+        const item = stData.subjectScores[sub];
+        sumScore += item.score;
+        sumPossible += item.total;
+        if (item.isPass) {
+          passC += 1;
+        } else {
+          weakSubs.push(sub);
+        }
+      });
+
+      stData.totalScore = sumScore;
+      stData.totalPossible = sumPossible;
+      stData.avgPct = sumPossible > 0 ? Math.round((sumScore / sumPossible) * 100) : 0;
+      stData.passCount = passC;
+      stData.weakSubjects = weakSubs;
+
+      // Evaluation Grading Criteria
+      if (stData.avgPct >= 80) {
+        stData.evaluationGrade = {
+          label: 'ดีมาก (Excellent)',
+          color: 'text-emerald-600',
+          badgeBg: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          desc: 'เข้าใจเนื้อหาบทเรียนเป็นอย่างดีเยี่ยม มีผลการเรียนโดดเด่น',
+          icon: '🌟'
+        };
+      } else if (stData.avgPct >= 70) {
+        stData.evaluationGrade = {
+          label: 'ดี (Good)',
+          color: 'text-teal-600',
+          badgeBg: 'bg-teal-100 text-teal-800 border-teal-200',
+          desc: 'ผลการเรียนอยู่ในเกณฑ์ดี มีความเข้าใจบทเรียนค่อนข้างสมบูรณ์',
+          icon: '🟢'
+        };
+      } else if (stData.avgPct >= 60) {
+        stData.evaluationGrade = {
+          label: 'ปานกลาง / ผ่านเกณฑ์ (Satisfactory)',
+          color: 'text-blue-600',
+          badgeBg: 'bg-blue-100 text-blue-800 border-blue-200',
+          desc: 'ผ่านเกณฑ์มาตรฐาน ควรได้รับการส่งเสริมต่อเนื่องในจุดที่ยังผิดพลาด',
+          icon: '🔵'
+        };
+      } else if (stData.avgPct >= 50) {
+        stData.evaluationGrade = {
+          label: 'ผ่านเกณฑ์ขั้นต่ำ (Basic Pass)',
+          color: 'text-amber-600',
+          badgeBg: 'bg-amber-100 text-amber-800 border-amber-200',
+          desc: 'ผ่านเกณฑ์ขั้นต่ำ ควรได้รับการแนะนำและทบทวนบทเรียนเพิ่มเติม',
+          icon: '🟡'
+        };
+      } else {
+        stData.evaluationGrade = {
+          label: 'ควรได้รับการพัฒนาและซ่อมเสริม (Intervention Needed)',
+          color: 'text-rose-600',
+          badgeBg: 'bg-rose-100 text-rose-800 border-rose-200 font-black',
+          desc: 'คะแนนต่ำกว่าเกณฑ์มาตรฐานในหลายวิชา ต้องการการติวและดูแลเป็นพิเศษ',
+          icon: '🔴'
+        };
+        stData.needsIntervention = true;
+      }
+
+      // Trigger intervention if failed in more than half of taken subjects
+      if (weakSubs.length > 0 && weakSubs.length >= Math.ceil(subjects.length / 2)) {
+        stData.needsIntervention = true;
+      }
+
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        if (stData.studentName.toLowerCase().includes(term) || stData.classroom.toLowerCase().includes(term)) {
+          resultList.push(stData);
+        }
+      } else {
+        resultList.push(stData);
+      }
+    });
+
+    // Sort: students needing intervention first, then by avgPct ascending
+    resultList.sort((a, b) => {
+      if (a.needsIntervention && !b.needsIntervention) return -1;
+      if (!a.needsIntervention && b.needsIntervention) return 1;
+      return a.avgPct - b.avgPct;
+    });
+
+    const interventionList = resultList.filter(s => s.needsIntervention);
+
+    return {
+      allStudents: resultList,
+      interventionList,
+      totalAnalyzed: resultList.length
+    };
+  }, [stats, students, individualSubTab, selectedClassroom, searchTerm]);
+
   const getSpecificSelectionTitle = () => {
     if (selectedTopic !== 'ALL') {
       return `หน่วยการเรียนรู้/เรื่อง: "${selectedTopic}"`;
@@ -792,22 +976,266 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       </div>
 
       {/* 🧭 Sub Navigation Tabs inside Analytics */}
-      <div className="flex border-b border-slate-200">
+      <div className="flex border-b border-slate-200 overflow-x-auto gap-2">
+        <button 
+          onClick={() => setActiveTab('INDIVIDUAL_STUDENT')}
+          className={`px-6 py-4 font-black text-sm transition-all border-b-4 whitespace-nowrap flex items-center gap-2 ${activeTab === 'INDIVIDUAL_STUDENT' ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-2xl shadow-sm' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+        >
+          <GraduationCap size={18}/> 🎓 วิเคราะห์นักเรียนรายบุคคล (กลางภาค / ปลายภาค)
+        </button>
         <button 
           onClick={() => setActiveTab('ANALYTICS')}
-          className={`px-8 py-4 font-black text-sm transition-all border-b-4 ${activeTab === 'ANALYTICS' ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-2xl shadow-sm' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          className={`px-6 py-4 font-black text-sm transition-all border-b-4 whitespace-nowrap flex items-center gap-2 ${activeTab === 'ANALYTICS' ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-2xl shadow-sm' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
         >
-          📊 รายงานวิเคราะห์คุณภาพข้อสอบรายข้อ (Item Analysis)
+          <BarChart3 size={18}/> 📊 วิเคราะห์คุณภาพข้อสอบรายข้อ (Item Analysis)
         </button>
         <button 
           onClick={() => setActiveTab('SCORES')}
-          className={`px-8 py-4 font-black text-sm transition-all border-b-4 ${activeTab === 'SCORES' ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-2xl shadow-sm' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+          className={`px-6 py-4 font-black text-sm transition-all border-b-4 whitespace-nowrap flex items-center gap-2 ${activeTab === 'SCORES' ? 'border-indigo-600 text-indigo-600 bg-white rounded-t-2xl shadow-sm' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
         >
-          📋 ตารางผลคะแนนนักเรียนรายบุคคล
+          <FileText size={18}/> 📋 ตารางรวมคะแนนสอบทั้งหมด
         </button>
       </div>
 
-      {activeTab === 'ANALYTICS' ? (
+      {activeTab === 'INDIVIDUAL_STUDENT' ? (
+        <div className="space-y-8 animate-fade-in">
+          {/* 🎯 Sub-Tab Switcher: MIDTERM vs FINAL */}
+          <div className="bg-white p-6 rounded-[35px] border border-slate-100 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div>
+                <h4 className="font-black text-xl text-slate-800 flex items-center gap-3">
+                  <Award className="text-amber-500"/>
+                  รายงานสรุปผลการสอบกลางภาคและปลายภาครายบุคคล
+                </h4>
+                <p className="text-xs font-bold text-slate-400 mt-1">
+                  เลือกสลับประเภทการสอบเพื่อดูคะแนนรายวิชา ระดับเกณฑ์ประเมิน และรายชื่อนักเรียนที่ต้องได้รับการพัฒนา
+                </p>
+              </div>
+
+              {/* Toggle Buttons: Midterm vs Final */}
+              <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 self-stretch sm:self-auto">
+                <button
+                  onClick={() => setIndividualSubTab('MIDTERM')}
+                  className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${individualSubTab === 'MIDTERM' ? 'bg-amber-500 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  📝 คะแนนสอบกลางภาค (Midterm)
+                </button>
+                <button
+                  onClick={() => setIndividualSubTab('FINAL')}
+                  className={`flex-1 sm:flex-none px-6 py-2.5 rounded-xl font-black text-xs transition-all flex items-center justify-center gap-2 ${individualSubTab === 'FINAL' ? 'bg-purple-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-900'}`}
+                >
+                  🏆 คะแนนสอบปลายภาค (Final)
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* 🚨 ALERT & INTERVENTION CARD: รายชื่อนักเรียนที่ควรได้รับการพัฒนาและติวซ่อมเสริม */}
+          <div className="bg-gradient-to-br from-rose-50 via-orange-50 to-amber-50 p-8 rounded-[40px] border-2 border-rose-200 shadow-sm space-y-6 relative overflow-hidden">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-b border-rose-200/60 pb-5">
+              <div className="flex items-center gap-4">
+                <div className="p-3 bg-rose-600 text-white rounded-2xl shadow-lg shadow-rose-200 animate-pulse">
+                  <AlertCircle size={28}/>
+                </div>
+                <div>
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-100 text-rose-800 rounded-full text-[10px] font-black uppercase tracking-wider mb-1">
+                    <Sparkles size={12}/> ระบบช่วยคัดกรองการซ่อมเสริม (Intervention Alert)
+                  </div>
+                  <h4 className="font-black text-2xl text-slate-900">
+                    รายชื่อนักเรียนที่ควรได้รับการพัฒนาและส่งเสริมในการจัดการเรียนการสอน
+                  </h4>
+                  <p className="text-xs font-bold text-slate-600 mt-1">
+                    ({individualSubTab === 'MIDTERM' ? 'การสอบกลางภาค' : 'การสอบปลายภาค'}) — สำหรับคุณครูนำไปวางแผนปรับปรุงการเรียนการสอนและจัดกิจกรรมติวซ่อมเสริมรายบุคคล
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="px-5 py-2.5 bg-white/90 backdrop-blur rounded-2xl border border-rose-200 text-center shadow-sm">
+                  <div className="text-2xl font-black text-rose-600">
+                    {individualStudentAnalysis.interventionList.length} <span className="text-xs font-bold text-slate-500">คน</span>
+                  </div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase">ต้องติวซ่อมเสริม</div>
+                </div>
+                <button
+                  onClick={handleTriggerPrint}
+                  className="px-5 py-3 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-2xl flex items-center gap-2 shadow-lg shadow-rose-200 transition active:scale-95"
+                >
+                  <Printer size={16}/> พิมพ์รายงานซ่อมเสริม
+                </button>
+              </div>
+            </div>
+
+            {/* List of Intervention Students */}
+            {individualStudentAnalysis.interventionList.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {individualStudentAnalysis.interventionList.map((st, idx) => (
+                  <div key={st.studentId || idx} className="bg-white p-5 rounded-3xl border border-rose-100 shadow-sm space-y-3 relative">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-rose-100 text-rose-700 rounded-2xl flex items-center justify-center font-black text-base shrink-0">
+                          {st.student?.avatar || '👤'}
+                        </div>
+                        <div>
+                          <h5 className="font-black text-slate-900 text-sm leading-snug">{st.studentName}</h5>
+                          <p className="text-[10px] font-bold text-slate-400">ชั้น/ห้อง: {st.classroom} • ID: {st.studentId}</p>
+                        </div>
+                      </div>
+                      <span className="px-2.5 py-1 bg-rose-100 text-rose-800 font-black text-[10px] rounded-full shrink-0 border border-rose-200">
+                        {st.avgPct}%
+                      </span>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100 space-y-2">
+                      <div className="text-[11px] font-black text-slate-700 flex items-center justify-between">
+                        <span>วิชาที่ควรติวซ่อมเสริม:</span>
+                        <span className="text-rose-600 font-black">{st.weakSubjects.length} วิชา</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {st.weakSubjects.map((sub, i) => {
+                          const subData = st.subjectScores[sub];
+                          return (
+                            <span key={i} className="px-2.5 py-1 bg-rose-50 text-rose-700 text-[10px] font-black rounded-lg border border-rose-200 flex items-center gap-1">
+                              ❌ {sub}: {subData ? `${subData.score}/${subData.total} (${subData.pct}%)` : 'ต่ำกว่าเกณฑ์'}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <p className="text-[10px] font-bold text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200/60 leading-relaxed">
+                      💡 <strong>ข้อแนะนำคุณครู:</strong> จัดกิจกรรมสอนซ่อมเสริมมโนทัศน์เบื้องต้นในวิชาที่ได้คะแนนน้อย และติดตามทบทวนโจทย์เป็นรายบุคคลก่อนการสอบครั้งต่อไป
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-8 bg-white/80 rounded-3xl text-center border border-emerald-200 space-y-2">
+                <CheckCircle2 size={36} className="mx-auto text-emerald-500"/>
+                <h5 className="font-black text-slate-800 text-base">ไม่มีนักเรียนที่ต้องติวซ่อมเสริมเร่งด่วน</h5>
+                <p className="text-xs font-bold text-slate-500">นักเรียนทุกคนที่เข้าสอบ ({individualSubTab === 'MIDTERM' ? 'กลางภาค' : 'ปลายภาค'}) ผ่านเกณฑ์ประเมินเบื้องต้นตามเป้าหมาย</p>
+              </div>
+            )}
+          </div>
+
+          {/* 📊 ALL INDIVIDUAL STUDENTS CARDS & MATRIX */}
+          <div className="bg-white p-8 rounded-[40px] border border-slate-100 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div>
+                <h4 className="font-black text-xl text-slate-800 flex items-center gap-3">
+                  <Users className="text-indigo-600"/>
+                  วิเคราะห์ผลคะแนนสอบรายบุคคล ({individualSubTab === 'MIDTERM' ? 'กลางภาค' : 'ปลายภาค'})
+                </h4>
+                <p className="text-xs font-bold text-slate-400 mt-1">
+                  แสดงคะแนนแยกตามรายวิชา สรุปภาพรวมคะแนนเฉลี่ย และผลการประเมินระดับเกณฑ์การสอบ
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-black text-slate-500 bg-slate-100 px-4 py-2 rounded-xl">
+                  จำนวนนักเรียนที่วิเคราะห์: {individualStudentAnalysis.totalAnalyzed} คน
+                </span>
+              </div>
+            </div>
+
+            {/* Individual Student Cards Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {individualStudentAnalysis.allStudents.map((st, idx) => {
+                const subNames = Object.keys(st.subjectScores);
+                return (
+                  <div key={st.studentId || idx} className="p-6 rounded-[30px] border-2 border-slate-100 bg-slate-50/50 hover:bg-white hover:border-indigo-200 transition-all shadow-sm space-y-5">
+                    {/* Header: Student Info & Overall Grade */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200/60 pb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-indigo-100 text-indigo-700 rounded-2xl flex items-center justify-center font-black text-xl shrink-0 shadow-inner">
+                          {st.student?.avatar || '🎓'}
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <h5 className="font-black text-slate-900 text-base">{st.studentName}</h5>
+                            <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-black rounded-lg border border-indigo-100">
+                              ห้อง {st.classroom}
+                            </span>
+                          </div>
+                          <p className="text-[10px] font-bold text-slate-400 mt-0.5">รหัสนักเรียน: {st.studentId}</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-start sm:items-end">
+                        <span className={`px-3.5 py-1.5 rounded-full text-xs font-black border shadow-sm ${st.evaluationGrade.badgeBg}`}>
+                          {st.evaluationGrade.icon} {st.evaluationGrade.label}
+                        </span>
+                        <p className="text-[10px] font-bold text-slate-400 mt-1">
+                          เฉลี่ยรวม {st.avgPct}% ({st.totalScore}/{st.totalPossible} คะแนน)
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Subject Scores Display (e.g. คณิตศาสตร์ 6, ภาษาไทย 7, ภาษาอังกฤษ 8) */}
+                    <div className="space-y-3">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
+                        📚 รายละเอียดคะแนนแต่ละรายวิชา
+                      </span>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {subNames.map((sub, i) => {
+                          const item = st.subjectScores[sub];
+                          return (
+                            <div key={i} className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between ${item.isPass ? 'bg-white border-slate-200' : 'bg-rose-50/60 border-rose-200'}`}>
+                              <div>
+                                <div className="font-black text-xs text-slate-800">{sub}</div>
+                                <div className="text-[10px] font-bold text-slate-400 mt-0.5">
+                                  คะแนนเต็ม {item.total} ข้อ
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className={`font-black text-sm ${item.isPass ? 'text-indigo-600' : 'text-rose-600'}`}>
+                                  {item.score} / {item.total}
+                                </div>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${item.isPass ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
+                                  {item.pct}% ({item.isPass ? 'ผ่าน' : 'ไม่ผ่าน'})
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        {subNames.length === 0 && (
+                          <div className="col-span-2 text-center p-4 text-xs font-bold text-slate-400 italic">
+                            ยังไม่มีข้อมูลคะแนนสอบในหมวดหมู่นี้
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Progress Bar & Evaluation Note */}
+                    <div className="p-3.5 bg-white rounded-2xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between text-xs font-black text-slate-700">
+                        <span>หลอดประเมินศักยภาพรวม:</span>
+                        <span className={st.evaluationGrade.color}>{st.avgPct}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full rounded-full transition-all duration-500 ${st.avgPct >= 80 ? 'bg-emerald-500' : st.avgPct >= 70 ? 'bg-teal-500' : st.avgPct >= 60 ? 'bg-blue-500' : st.avgPct >= 50 ? 'bg-amber-500' : 'bg-rose-500'}`}
+                          style={{ width: `${st.avgPct}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] font-bold text-slate-500 pt-1">
+                        📌 <strong>สรุปภาพรวม:</strong> {st.evaluationGrade.desc}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+
+              {individualStudentAnalysis.allStudents.length === 0 && (
+                <div className="col-span-2 py-16 text-center text-slate-300 font-black italic">
+                  ไม่พบข้อมูลผลสอบกลางภาค/ปลายภาครายบุคคลตามเงื่อนไขที่เลือก
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : activeTab === 'ANALYTICS' ? (
         <div className="space-y-8">
           {/* 📊 ความแม่นยำรายหน่วยการเรียนรู้/หัวข้อ & Interactive Topic Selection */}
           {topicStats.length > 0 && (
