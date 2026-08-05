@@ -350,10 +350,28 @@ app.post('/api', async (req, res) => {
 
         case 'saveScore': {
           const { studentId, studentName, school, score, total, subject, assignmentId, category, earnedStars, details } = args;
-          await query(
-            'INSERT INTO exam_results (student_id, student_name, school, score, total_questions, subject, assignment_id, category, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-            [studentId, studentName, school, score, total, subject, assignmentId || null, category, Date.now(), details ? JSON.stringify(details) : null]
-          );
+          let updated = false;
+          if (assignmentId) {
+            const existingRows = await query(
+              'SELECT id FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1',
+              [studentId, assignmentId]
+            );
+            if (existingRows && existingRows.length > 0) {
+              await query(
+                'UPDATE exam_results SET score = ?, total_questions = ?, subject = ?, category = ?, timestamp = ?, details = ? WHERE id = ?',
+                [score, total, subject, category, Date.now(), details ? JSON.stringify(details) : null, existingRows[0].id]
+              );
+              updated = true;
+            }
+          }
+
+          if (!updated) {
+            await query(
+              'INSERT INTO exam_results (student_id, student_name, school, score, total_questions, subject, assignment_id, category, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+              [studentId, studentName, school, score, total, subject, assignmentId || null, category, Date.now(), details ? JSON.stringify(details) : null]
+            );
+          }
+
           if (earnedStars > 0) {
             await query('UPDATE students SET stars = stars + ? WHERE id = ?', [earnedStars, studentId]);
           }
@@ -1399,20 +1417,37 @@ app.post('/api', async (req, res) => {
 
       case 'saveScore': {
         const { studentId, studentName, school, score, total, subject, assignmentId, category, earnedStars, details } = args;
-        const newResult = {
-          id: db.exam_results.length + 1,
-          student_id: studentId,
-          student_name: studentName,
-          school: school,
-          score: score,
-          total_questions: total,
-          subject: subject,
-          assignment_id: assignmentId || null,
-          category: category,
-          timestamp: Date.now(),
-          details: details ? JSON.stringify(details) : null
-        };
-        db.exam_results.push(newResult);
+        let existingIndex = -1;
+        if (assignmentId) {
+          existingIndex = db.exam_results.findIndex((r: any) => String(r.student_id) === String(studentId) && String(r.assignment_id) === String(assignmentId));
+        }
+
+        if (existingIndex >= 0) {
+          db.exam_results[existingIndex] = {
+            ...db.exam_results[existingIndex],
+            score,
+            total_questions: total,
+            subject,
+            category,
+            timestamp: Date.now(),
+            details: details ? JSON.stringify(details) : db.exam_results[existingIndex].details
+          };
+        } else {
+          const newResult = {
+            id: generateId('res_'),
+            student_id: studentId,
+            student_name: studentName,
+            school: school,
+            score: score,
+            total_questions: total,
+            subject: subject,
+            assignment_id: assignmentId || null,
+            category: category,
+            timestamp: Date.now(),
+            details: details ? JSON.stringify(details) : null
+          };
+          db.exam_results.push(newResult);
+        }
 
         if (earnedStars > 0) {
           const student = db.students.find((s: any) => String(s.id) === String(studentId));

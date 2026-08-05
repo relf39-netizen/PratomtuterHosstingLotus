@@ -5,7 +5,7 @@ import { Question, AssignmentCategory, ExamResultDetail } from '../types';
 import { 
   CheckCircle, XCircle, ArrowRight, ArrowLeft, HelpCircle, Send, 
   BookOpen, GraduationCap, Volume2, VolumeX, ShieldCheck, Grid, 
-  Check, X, AlertTriangle, FileCheck
+  Check, X, AlertTriangle, FileCheck, Loader2
 } from 'lucide-react';
 import { speak, stopSpeak } from '../utils/soundUtils';
 
@@ -137,24 +137,32 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
     }
   };
 
-  // 🎯 Complete Exam Submission
-  const handleConfirmFinalSubmit = () => {
-    let finalScore = 0;
-    const finalDetails: ExamResultDetail[] = questions.map(q => {
-      const selected = userAnswers[q.id];
-      const isCorrect = selected ? String(selected) === String(q.correctChoiceId) : false;
-      if (isCorrect) finalScore += 1;
-      return {
-        questionId: q.id,
-        selectedChoiceId: selected ? String(selected) : '',
-        isCorrect: isCorrect,
-        topic: q.unit || q.subject,
-        questionText: q.text
-      };
-    });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-    setShowReviewModal(false);
-    onFinish(finalScore, questions.length, assignmentIdRef.current, category, finalDetails);
+  // 🎯 Complete Exam Submission
+  const handleConfirmFinalSubmit = async () => {
+    if (isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      let finalScore = 0;
+      const finalDetails: ExamResultDetail[] = questions.map(q => {
+        const selected = userAnswers[q.id];
+        const isCorrect = selected ? String(selected) === String(q.correctChoiceId) : false;
+        if (isCorrect) finalScore += 1;
+        return {
+          questionId: q.id,
+          selectedChoiceId: selected ? String(selected) : '',
+          isCorrect: isCorrect,
+          topic: q.unit || q.subject,
+          questionText: q.text
+        };
+      });
+
+      setShowReviewModal(false);
+      await onFinish(finalScore, questions.length, assignmentIdRef.current, category, finalDetails);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const answeredCount = Object.keys(userAnswers).filter(id => !!userAnswers[id]).length;
@@ -458,9 +466,11 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
 
               <button
                 onClick={handleConfirmFinalSubmit}
-                className="w-full sm:w-auto px-6 py-3 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-200 transition"
+                disabled={isSubmitting}
+                className="w-full sm:w-auto px-6 py-3 bg-rose-600 hover:bg-rose-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-200 transition"
               >
-                <Send size={16}/> ยืนยันส่งข้อสอบ
+                {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16}/>}
+                {isSubmitting ? 'กำลังส่งข้อสอบ...' : 'ยืนยันส่งข้อสอบ'}
               </button>
             </div>
           </div>

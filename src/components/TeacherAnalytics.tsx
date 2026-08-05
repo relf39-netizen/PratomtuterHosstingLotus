@@ -334,9 +334,22 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     });
   }, [stats, students, selectedSubject, selectedCategory, selectedClassroom, selectedAssignmentId, selectedTopic, searchTerm, teacherGrades, teacherClassrooms, canManageAll, assignments, questions]);
 
+  // 🎯 Filtered stats deduplicated per student per assignment/subject (latest attempt)
+  const latestStatsPerStudent = useMemo(() => {
+    const map = new Map<string, ExamResult>();
+    filteredStats.forEach(res => {
+      const key = `${String(res.studentId).trim()}_${res.assignmentId ? String(res.assignmentId).trim() : res.subject}`;
+      const existing = map.get(key);
+      if (!existing || Number(res.timestamp || 0) > Number(existing.timestamp || 0)) {
+        map.set(key, res);
+      }
+    });
+    return Array.from(map.values());
+  }, [filteredStats]);
+
   // Compute Overall Score Metrics
   const summaryMetrics = useMemo(() => {
-    if (filteredStats.length === 0) {
+    if (latestStatsPerStudent.length === 0) {
       return {
         totalAttempts: 0,
         uniqueStudentsCount: 0,
@@ -355,7 +368,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
     let passC = 0;
     const studentIds = new Set<string>();
 
-    filteredStats.forEach(r => {
+    latestStatsPerStudent.forEach(r => {
       studentIds.add(String(r.studentId).trim());
       
       let qCount = r.totalQuestions || 1;
@@ -396,17 +409,17 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       uniqueStudentsCount: studentIds.size,
       averagePercent: avgPct,
       maxPercent: Math.round(maxP),
-      minPercent: Math.round(minP === 100 && filteredStats.length === 0 ? 0 : minP),
-      passRate: Math.round((passC / filteredStats.length) * 100),
+      minPercent: Math.round(minP === 100 && latestStatsPerStudent.length === 0 ? 0 : minP),
+      passRate: Math.round((passC / latestStatsPerStudent.length) * 100),
       passCount: passC
     };
-  }, [filteredStats, selectedTopic, questions]);
+  }, [latestStatsPerStudent, filteredStats.length, selectedTopic, questions]);
 
   // Topic / Unit Analysis
   const topicStats = useMemo(() => {
     const topics: Record<string, { name: string; correct: number; total: number }> = {};
     
-    filteredStats.forEach(res => {
+    latestStatsPerStudent.forEach(res => {
       const detailsArray = typeof res.details === 'string' ? JSON.parse(res.details) : res.details;
       if (detailsArray && Array.isArray(detailsArray)) {
         detailsArray.forEach((det: any) => {
@@ -426,7 +439,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       ...t,
       accuracy: t.total > 0 ? Math.round((t.correct / t.total) * 100) : 0
     })).sort((a, b) => b.accuracy - a.accuracy);
-  }, [filteredStats, questions]);
+  }, [latestStatsPerStudent, questions]);
 
   // Complete Item Analysis (วิเคราะห์ข้อสอบรายข้อ)
   const itemAnalysisData = useMemo(() => {
@@ -441,7 +454,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
       totalCount: number; 
     }> = {};
 
-    filteredStats.forEach(res => {
+    latestStatsPerStudent.forEach(res => {
       const detailsArray = typeof res.details === 'string' ? JSON.parse(res.details) : res.details;
       if (detailsArray && Array.isArray(detailsArray)) {
         detailsArray.forEach((det: any) => {

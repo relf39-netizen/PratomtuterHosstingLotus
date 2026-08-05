@@ -801,9 +801,21 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
   const analysisStats = useMemo(() => {
     if (!analysisAssignment) return { totalAttempts: 0, uniqueStudents: 0, avgPct: 0, maxPct: 0, minPct: 0, passCount: 0, passRate: 0, studentScores: [], itemAnalysis: [] };
 
-    const assignmentResults = stats.filter(s => String(s.assignmentId).trim() === String(analysisAssignment.id).trim());
-    const totalAttempts = assignmentResults.length;
-    const uniqueStudents = new Set(assignmentResults.map(s => String(s.studentId).trim())).size;
+    const rawAssignmentResults = stats.filter(s => String(s.assignmentId).trim() === String(analysisAssignment.id).trim());
+
+    // 🎯 Group by studentId and keep each student's latest attempt result
+    const studentLatestMap = new Map<string, typeof stats[0]>();
+    rawAssignmentResults.forEach(r => {
+      const sId = String(r.studentId).trim();
+      const existing = studentLatestMap.get(sId);
+      if (!existing || Number(r.timestamp || 0) > Number(existing.timestamp || 0)) {
+        studentLatestMap.set(sId, r);
+      }
+    });
+
+    const assignmentResults = Array.from(studentLatestMap.values());
+    const totalAttempts = rawAssignmentResults.length;
+    const uniqueStudents = assignmentResults.length;
 
     const totalQ = analysisAssignment.questionCount || (analysisQuestions.length > 0 ? analysisQuestions.length : 1);
 
