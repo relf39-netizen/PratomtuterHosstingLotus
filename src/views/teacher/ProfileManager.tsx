@@ -126,9 +126,30 @@ const ProfileManager: React.FC<ProfileManagerProps> = ({ teacher, onUpdate }) =>
       }
 
       localStorage.setItem('MST_CUSTOM_GEMINI_KEY', cleanedKey);
+      if (typeof process !== 'undefined' && process.env) {
+          process.env.API_KEY = cleanedKey;
+      }
+      if (typeof window !== 'undefined' && (window as any).process?.env) {
+          (window as any).process.env.API_KEY = cleanedKey;
+      }
       setManualApiKey(cleanedKey);
       setIsKeySaved(true);
-      alert("✅ บันทึก API Key ส่วนตัวเรียบร้อยแล้ว\n\nหากใช้งานแล้วขึ้นว่า 'Quota Exceeded' อาจเป็นเพราะคีย์ฟรีมีจำกัดการใช้งานต่อนาที (15 RPM) กรุณารอสักครู่แล้วลองใหม่ครับ");
+      alert("✅ บันทึก API Key ใหม่เรียบร้อยแล้ว!\nระบบได้อัปเดตคีย์ใหม่พร้อมใช้งานสร้างข้อสอบด้วย AI ได้ทันทีครับ");
+  };
+
+  const handleClearKey = () => {
+      if (confirm("ต้องการลบ API Key เดิมออกเพื่อระบุคีย์ใหม่ใช่หรือไม่?")) {
+          localStorage.removeItem('MST_CUSTOM_GEMINI_KEY');
+          if (typeof process !== 'undefined' && process.env) {
+              delete process.env.API_KEY;
+          }
+          if (typeof window !== 'undefined' && (window as any).process?.env) {
+              delete (window as any).process.env.API_KEY;
+          }
+          setManualApiKey('');
+          setIsKeySaved(false);
+          alert("ลบ API Key เดิมเรียบร้อยแล้ว คุณครูสามารถวาง API Key ใหม่แล้วพิมบันทึกได้เลยครับ");
+      }
   };
 
   const groupedClassrooms = useMemo(() => {
@@ -308,9 +329,16 @@ const ProfileManager: React.FC<ProfileManagerProps> = ({ teacher, onUpdate }) =>
                                 {showApiKey ? <EyeOff size={16}/> : <Eye size={16}/>}
                             </button>
                         </div>
-                        <button onClick={handleSaveManualKey} className={`w-full py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-xl active:scale-95 ${isKeySaved ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
-                            {isKeySaved ? <><CheckCircle size={16}/> บันทึกคีย์สำเร็จ</> : <><ClipboardPaste size={16}/> บันทึก API Key</>}
-                        </button>
+                        <div className="flex gap-2">
+                            <button onClick={handleSaveManualKey} className={`flex-1 py-3 rounded-xl font-black text-xs flex items-center justify-center gap-2 transition-all shadow-xl active:scale-95 ${isKeySaved ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
+                                {isKeySaved ? <><CheckCircle size={16}/> อัปเดต/บันทึก API Key ใหม่</> : <><ClipboardPaste size={16}/> บันทึก API Key</>}
+                            </button>
+                            {isKeySaved && (
+                                <button type="button" onClick={handleClearKey} className="px-3 py-3 bg-rose-600/80 hover:bg-rose-600 text-white rounded-xl font-black text-xs transition active:scale-95" title="ลบ API Key เดิม">
+                                    <Trash2 size={16}/>
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>

@@ -25,18 +25,21 @@ export const generateQuestionWithAI = async (
   existingQuestions: string[] = []
 ): Promise<GeneratedQuestion[] | null> => {
   
-  // 🟢 ขั้นตอนการตรวจสอบ API Key ที่เข้มงวด
-  // 1. ตรวจสอบจาก Global process.env (ซึ่งถูก Polyfill ไว้ใน index.html)
-  // 2. ตรวจสอบจาก LocalStorage โดยตรงเพื่อความมั่นใจสูงสุด
-  const storageKey = localStorage.getItem('MST_CUSTOM_GEMINI_KEY') || '';
+  // 🟢 อ่าน API Key จาก LocalStorage เป็นอันดับแรกก่อนเสมอ
+  // เพื่อให้แน่ใจว่าคีย์ใหม่ที่คุณครูบันทึกใหม่สดๆ จะถูกนำมาใช้งานทันที (แทนที่คีย์เดิมที่อาจหมดอายุแล้วใน memory)
+  const storageKey = (typeof localStorage !== 'undefined' ? localStorage.getItem('MST_CUSTOM_GEMINI_KEY') : null) || '';
+  const envKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
   
-  if (typeof process !== 'undefined' && process.env) {
-    if (!process.env.API_KEY && storageKey) {
-      process.env.API_KEY = storageKey;
-    }
-  }
+  // 🎯 ให้ความสำคัญกับ storageKey (คีย์ที่คุณครูบันทึกในเครื่อง) ก่อน envKey
+  const rawKey = storageKey || envKey || '';
 
-  const rawKey = (process.env.API_KEY) || storageKey;
+  // อัปเดต process.env ให้เป็นคีย์ล่าสุดเสมอกัน
+  if (typeof process !== 'undefined' && process.env) {
+    process.env.API_KEY = rawKey;
+  }
+  if (typeof window !== 'undefined' && (window as any).process?.env) {
+    (window as any).process.env.API_KEY = rawKey;
+  }
   
   if (!rawKey) {
     throw new Error("ไม่พบ API Key กรุณาตั้งค่าที่หน้า 'ข้อมูลของฉัน' (ในส่วนโปรไฟล์คุณครู) ก่อนใช้งาน AI ครับ");
@@ -122,12 +125,12 @@ export const generateQuestionWithAI = async (
     
     const errorMsg = error?.message || "";
     
-    if (errorMsg.includes('API key not found') || errorMsg.includes('403') || errorMsg.includes('invalid')) {
-      throw new Error("API Key ไม่ถูกต้อง หรือยังไม่ได้เปิดใช้งาน Generative Language API ใน Google Cloud Console ครับ");
+    if (errorMsg.includes('API key not found') || errorMsg.includes('403') || errorMsg.includes('invalid') || errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('expired')) {
+      throw new Error("API Key ไม่ถูกต้อง หมดอายุ หรือสิทธิ์เข้าถึงถูกยกเลิก กรุณาไปที่หน้า 'ข้อมูลของฉัน' ในโปรไฟล์คุณครู เพื่อสร้าง API Key ใหม่มาบันทึกเปลี่ยนใช้งานครับ");
     }
     
-    if (errorMsg.includes('quota') || errorMsg.includes('429')) {
-      throw new Error("โควต้าการใช้งาน AI เต็มแล้ว (สำหรับบัญชีฟรีจะมีจำกัดต่อนาที) กรุณารอสักครู่แล้วลองใหม่ หรือใช้คีย์แบบ Paid ครับ");
+    if (errorMsg.includes('quota') || errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED')) {
+      throw new Error("โควต้าการใช้งาน API Key เดิมเต็มแล้ว/หมดอายุแล้ว กรุณารอสักครู่ แล้วลองใหม่ หรือสร้าง API Key ใหม่มาบันทึกสลับเปลี่ยนที่หน้าโปรไฟล์ครับ");
     }
 
     throw new Error(errorMsg || "เกิดข้อผิดพลาดในการเชื่อมต่อ AI");
