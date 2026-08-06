@@ -438,11 +438,10 @@ app.post('/api', async (req, res) => {
                 for (const st of stRows || []) {
                   const existing = await query('SELECT id FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1', [st.id, assignmentId]);
                   if (!existing || existing.length === 0) {
-                    const resId = generateId('res_');
                     const detailsObj = { retakeAllowed: true };
                     await query(
-                      'INSERT INTO exam_results (id, student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
-                      [resId, st.id, st.name, st.school || asg.school || '', assignmentId, asg.subject || '', asg.category || 'GENERAL', Date.now(), JSON.stringify(detailsObj)]
+                      'INSERT INTO exam_results (student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
+                      [st.id, st.name, st.school || asg.school || '', assignmentId, asg.subject || '', asg.category || 'GENERAL', Date.now(), JSON.stringify(detailsObj)]
                     );
                   }
                 }
@@ -482,7 +481,6 @@ app.post('/api', async (req, res) => {
             }
             return res.json({ success: true });
           } else if (studentId && assignmentId) {
-            const resId = generateId('res_');
             const detailsObj = { retakeAllowed: allowRetake };
 
             const stRows = await query('SELECT name, school FROM students WHERE id = ? LIMIT 1', [studentId]);
@@ -495,8 +493,8 @@ app.post('/api', async (req, res) => {
             const finalSchool = school || ((asgRows && asgRows.length > 0) ? asgRows[0].school : '');
 
             await query(
-              'INSERT INTO exam_results (id, student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
-              [resId, studentId, studentName, finalSchool, assignmentId, subject, category, Date.now(), JSON.stringify(detailsObj)]
+              'INSERT INTO exam_results (student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
+              [studentId, studentName, finalSchool, assignmentId, subject, category, Date.now(), JSON.stringify(detailsObj)]
             );
             return res.json({ success: true });
           }
