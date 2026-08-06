@@ -391,7 +391,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                 {(isAdminUser || isExecutive) && <MenuCard icon={<Settings size={32}/>} title="ตั้งค่าโรงเรียน" desc="จัดการนักเรียน/ครู/ห้องเรียน" color="from-cyan-500 to-blue-500 shadow-cyan-100" onClick={()=>setActiveTab('school-settings')}/>}
                 <MenuCard icon={<List size={32}/>} title="จัดการรายวิชา" desc="เพิ่ม/ลบ วิชาที่สอน" color="from-rose-500 to-pink-600 shadow-pink-100" onClick={()=>setActiveTab('subjects')}/>
                 <MenuCard icon={<UserPlus size={32}/>} title="จัดการนักเรียน" desc="รายชื่อและข้อมูลนักเรียน" color="from-purple-500 to-indigo-600 shadow-purple-100" onClick={()=>setActiveTab('students')}/>
-                <MenuCard icon={<Calendar size={32}/>} title="สั่งการบ้าน" desc="มอบหมายงานและติดตาม" color="from-orange-500 to-amber-600 shadow-orange-100" onClick={()=>setActiveTab('assignments')}/>
+                <MenuCard icon={<Calendar size={32}/>} title="สร้างแบบทดสอบ" desc="สร้างข้อสอบหน่วยการเรียนรู้กลางภาคและปลายภาค" color="from-orange-500 to-amber-600 shadow-orange-100" onClick={()=>setActiveTab('assignments')}/>
                 <MenuCard icon={<BarChart2 size={32}/>} title="ดูผลคะแนน" desc="สถิติการสอบรายบุคคล" color="from-emerald-500 to-teal-600 shadow-emerald-100" onClick={()=>setActiveTab('stats')}/>
                 <MenuCard icon={<FileText size={32}/>} title="คลังข้อสอบ" desc="จัดการข้อสอบในระบบ" color="from-sky-500 to-blue-600 shadow-sky-100" onClick={()=>setActiveTab('questions')}/>
                 <MenuCard icon={<Gamepad2 size={32}/>} title="Game Room" desc="ห้องแข่งขัน Real-time" color="from-yellow-400 to-orange-500 shadow-yellow-100" onClick={onStartGame}/>

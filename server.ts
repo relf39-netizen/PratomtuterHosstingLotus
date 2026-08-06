@@ -58,6 +58,26 @@ function initLocalDb() {
   }
 }
 
+function normalizeExamResultRow(row: any) {
+  if (!row) return row;
+  const studentId = String(row.student_id || row.studentId || '');
+  const studentName = row.student_name || row.studentName || '';
+  const assignmentId = String(row.assignment_id || row.assignmentId || '');
+  const totalQuestions = Number(row.total_questions ?? row.totalQuestions ?? 0);
+  return {
+    ...row,
+    id: String(row.id),
+    studentId,
+    student_id: studentId,
+    studentName,
+    student_name: studentName,
+    assignmentId,
+    assignment_id: assignmentId,
+    totalQuestions,
+    total_questions: totalQuestions,
+  };
+}
+
 function getJsonDb() {
   initLocalDb();
   return JSON.parse(fs.readFileSync(DB_FILE, 'utf-8'));
@@ -342,9 +362,10 @@ app.post('/api', async (req, res) => {
           const assignments = await query('SELECT * FROM assignments WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [cleanSchool]);
           const subjects = await query('SELECT * FROM subjects WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [cleanSchool]);
           const schoolRows = await query('SELECT * FROM schools WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1', [cleanSchool]);
+          const mappedResults = (results || []).map(normalizeExamResultRow);
           return res.json({
             students,
-            results,
+            results: mappedResults,
             assignments,
             subjects,
             school: schoolRows && schoolRows.length > 0 ? { ...schoolRows[0], allowAllManageStudents: schoolRows[0].allow_all_manage_students } : null
@@ -420,7 +441,7 @@ app.post('/api', async (req, res) => {
           const { resultId, assignmentId, studentId, allowRetake, mode } = args;
 
           if (mode === 'all' && assignmentId) {
-            const rows = await query('SELECT id, details FROM exam_results WHERE assignment_id = ?', [assignmentId]);
+            const rows = await query('SELECT id, details FROM exam_results WHERE assignment_id = ? OR assignment_id = ?', [assignmentId, String(assignmentId)]);
             for (const r of rows || []) {
               let detailsObj: any = {};
               try {
@@ -431,19 +452,24 @@ app.post('/api', async (req, res) => {
             }
 
             if (allowRetake) {
-              const asgRows = await query('SELECT subject, category, school FROM assignments WHERE id = ? LIMIT 1', [assignmentId]);
-              if (asgRows && asgRows.length > 0) {
-                const asg = asgRows[0];
-                const stRows = asg.school ? await query('SELECT id, name, school FROM students WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [asg.school]) : await query('SELECT id, name, school FROM students');
-                for (const st of stRows || []) {
-                  const existing = await query('SELECT id FROM exam_results WHERE student_id = ? AND assignment_id = ? LIMIT 1', [st.id, assignmentId]);
-                  if (!existing || existing.length === 0) {
-                    const detailsObj = { retakeAllowed: true };
-                    await query(
-                      'INSERT INTO exam_results (student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
-                      [st.id, st.name, st.school || asg.school || '', assignmentId, asg.subject || '', asg.category || 'GENERAL', Date.now(), JSON.stringify(detailsObj)]
-                    );
-                  }
+              const asgRows = await query('SELECT subject, category, school FROM assignments WHERE id = ? OR id = ? LIMIT 1', [assignmentId, String(assignmentId)]);
+              const asg = (asgRows && asgRows.length > 0) ? asgRows[0] : {};
+              const schoolName = asg.school || '';
+              const stRows = schoolName 
+                ? await query('SELECT id, name, school FROM students WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [schoolName]) 
+                : await query('SELECT id, name, school FROM students');
+
+              for (const st of stRows || []) {
+                const existing = await query(
+                  'SELECT id FROM exam_results WHERE (student_id = ? OR student_id = ?) AND (assignment_id = ? OR assignment_id = ?) LIMIT 1',
+                  [st.id, String(st.id), assignmentId, String(assignmentId)]
+                );
+                if (!existing || existing.length === 0) {
+                  const detailsObj = { retakeAllowed: true };
+                  await query(
+                    'INSERT INTO exam_results (student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
+                    [st.id, st.name, st.school || schoolName || '', assignmentId, asg.subject || '', asg.category || 'GENERAL', Date.now(), JSON.stringify(detailsObj)]
+                  );
                 }
               }
             }

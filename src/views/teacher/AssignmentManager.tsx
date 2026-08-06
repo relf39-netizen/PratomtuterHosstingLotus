@@ -1197,7 +1197,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                 onClick={() => setActiveTab('HISTORY')} 
                 className={`px-6 py-2.5 rounded-xl font-black text-sm transition-all flex items-center gap-2 ${activeTab === 'HISTORY' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-600 hover:text-slate-800'}`}
             >
-                <History size={18}/> รายการสั่งการบ้าน
+                <History size={18}/> รายการแบบทดสอบ
             </button>
         </div>
 
@@ -1629,17 +1629,17 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
         {activeTab === 'HISTORY' && (
             <div className="bg-white rounded-[45px] border border-slate-100 shadow-sm overflow-hidden animate-slide-up">
                 <div className="p-8 bg-slate-50 border-b flex justify-between items-center">
-                    <h4 className="font-black text-xl text-slate-700 flex items-center gap-3"><History className="text-indigo-500" size={26}/> ประวัติการสั่งการบ้าน</h4>
+                    <h4 className="font-black text-xl text-slate-700 flex items-center gap-3"><History className="text-indigo-500" size={26}/> ประวัติการสร้างแบบทดสอบ</h4>
                     <button onClick={onRefresh} className="p-3 bg-white text-slate-400 hover:text-indigo-600 rounded-2xl shadow-sm transition active:rotate-180 duration-500"><RefreshCw size={20}/></button>
                 </div>
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead className="bg-white text-slate-400 font-black border-b uppercase tracking-widest text-[10px]">
-                            <tr><th className="p-8">หัวข้อการบ้าน</th><th className="p-8 text-center">ระดับชั้น</th><th className="p-8 text-center">ส่งแล้ว</th><th className="p-8 text-right">จัดการ</th></tr>
+                            <tr><th className="p-8">หัวข้อแบบทดสอบ</th><th className="p-8 text-center">ระดับชั้น</th><th className="p-8 text-center">ส่งแล้ว</th><th className="p-8 text-right">จัดการ</th></tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {displayedAssignments.filter(a => a.category === 'GENERAL' && !a.title?.startsWith('[O-NET]')).length === 0 && (
-                                <tr><td colSpan={4} className="p-32 text-center text-slate-500 font-black italic text-lg">ยังไม่มีข้อมูลประวัติการสั่งการบ้าน</td></tr>
+                                <tr><td colSpan={4} className="p-32 text-center text-slate-500 font-black italic text-lg">ยังไม่มีข้อมูลประวัติการสร้างแบบทดสอบ</td></tr>
                             )}
                             {displayedAssignments.filter(a => a.category === 'GENERAL' && !a.title?.startsWith('[O-NET]')).slice().reverse().map((a) => {
                                 const submittedCount = countSubmitted(a.id);
@@ -2347,7 +2347,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {students.filter(s => (!selectedAssignment.grade || selectedAssignment.grade === 'ALL' || s.grade === selectedAssignment.grade) && (!selectedAssignment.targetClassrooms?.length || (s.classroom && selectedAssignment.targetClassrooms.includes(s.classroom)))).map(s => { 
-                                            const r = localStats.filter(stat => String(stat.studentId) === String(s.id) && String(stat.assignmentId) === String(selectedAssignment.id)).sort((a,b)=>b.score - a.score)[0]; 
+                                            const r = localStats.filter(stat => String(stat.studentId || (stat as any).student_id) === String(s.id) && String(stat.assignmentId || (stat as any).assignment_id) === String(selectedAssignment.id)).sort((a,b)=>b.score - a.score)[0]; 
                                             const detailsObj = typeof r?.details === 'string' ? (() => { try { return JSON.parse(r.details); } catch(e) { return {}; } })() : (r?.details || {});
                                             const matchingStats = localStats.filter(stat => String(stat.studentId || (stat as any).student_id) === String(s.id) && String(stat.assignmentId || (stat as any).assignment_id) === String(selectedAssignment.id));
                                             const isRetakeAllowed = matchingStats.some(stat => {
