@@ -6,7 +6,6 @@ import {
   Printer, Search, Award, Users, GraduationCap,
   Sparkles, FileText, Layers, Filter, RotateCcw, X
 } from 'lucide-react';
-import { toggleRetakePermission } from '../services/api';
 import { StudentExamDetailModal, extractDetailsArray } from './StudentExamDetailModal';
 
 interface TeacherAnalyticsProps {
@@ -109,70 +108,6 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
   useEffect(() => {
     setLocalStats(stats);
   }, [stats]);
-
-  const handleToggleRetake = async (r: ExamResult, allowRetake: boolean) => {
-    if (!r) return;
-    const validResultId = (r.id && !r.id.startsWith('res_temp_')) ? r.id : undefined;
-
-    const success = await toggleRetakePermission({
-      resultId: validResultId,
-      assignmentId: r.assignmentId || undefined,
-      studentId: r.studentId,
-      allowRetake,
-      mode: 'single'
-    });
-
-    if (success) {
-      setLocalStats(prev => prev.map(item => {
-        if (String(item.id) === String(r.id) || (r.studentId && item.studentId === r.studentId && item.assignmentId === r.assignmentId)) {
-          const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
-          detObj.retakeAllowed = allowRetake;
-          return { ...item, details: detObj };
-        }
-        return item;
-      }));
-    }
-  };
-
-  const handleBatchToggleRetake = async (allowRetake: boolean) => {
-    if (selectedAssignmentId !== 'ALL') {
-      const success = await toggleRetakePermission({
-        assignmentId: selectedAssignmentId,
-        allowRetake,
-        mode: 'all'
-      });
-
-      if (success) {
-        setLocalStats(prev => prev.map(item => {
-          if (String(item.assignmentId) === String(selectedAssignmentId)) {
-            const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
-            detObj.retakeAllowed = allowRetake;
-            return { ...item, details: detObj };
-          }
-          return item;
-        }));
-      }
-    } else {
-      // Toggle for all filtered stats
-      for (const r of filteredStats) {
-        await toggleRetakePermission({
-          resultId: r.id,
-          assignmentId: r.assignmentId || undefined,
-          studentId: r.studentId,
-          allowRetake,
-          mode: 'single'
-        });
-      }
-      setLocalStats(prev => prev.map(item => {
-        if (filteredStats.some(f => String(f.id) === String(item.id))) {
-          const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
-          detObj.retakeAllowed = allowRetake;
-          return { ...item, details: detObj };
-        }
-        return item;
-      }));
-    }
-  };
 
   // 1. Determine teacher's assigned grades & classrooms
   const teacherClassrooms = useMemo(() => {
@@ -1291,8 +1226,6 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         </p>
                       </div>
                     </div>
-
-                    {/* Subject Scores Display (e.g. คณิตศาสตร์ 6, ภาษาไทย 7, ภาษาอังกฤษ 8) */}
                     <div className="space-y-3">
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest block">
                         📚 รายละเอียดคะแนนแต่ละรายวิชา
@@ -1353,14 +1286,6 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                                     >
                                       <FileText size={12}/>
                                       <span>รายละเอียด</span>
-                                    </button>
-                                  )}
-                                  {item.resultObj && (
-                                    <button
-                                      onClick={() => handleToggleRetake(item.resultObj!, !item.retakeAllowed)}
-                                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition active:scale-95 shadow flex items-center gap-1 ${item.retakeAllowed ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
-                                    >
-                                      {item.retakeAllowed ? '🔒 ปิดสอบแก้ตัว' : '🔓 เปิดให้สอบแก้ตัว'}
                                     </button>
                                   )}
                                 </div>
@@ -1657,18 +1582,6 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
               </p>
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => handleBatchToggleRetake(true)}
-                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black rounded-xl shadow transition active:scale-95 flex items-center gap-1.5"
-              >
-                🔓 เปิดสอบแก้ตัวทั้งหมด ({filteredStats.length})
-              </button>
-              <button
-                onClick={() => handleBatchToggleRetake(false)}
-                className="px-3.5 py-2 bg-slate-700 hover:bg-slate-800 text-white text-xs font-black rounded-xl shadow transition active:scale-95 flex items-center gap-1.5"
-              >
-                🔒 ปิดสอบแก้ตัวทั้งหมด
-              </button>
               <button onClick={handleTriggerPrint} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs rounded-xl flex items-center gap-1.5 transition shadow">
                 <Printer size={16}/> พิมพ์ใบคะแนน
               </button>
@@ -1686,7 +1599,7 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                   <th className="p-4 text-center">คะแนนที่ได้</th>
                   <th className="p-4 text-center">คิดเป็น %</th>
                   <th className="p-4 text-center">ผลการสอบแก้ตัว</th>
-                  <th className="p-4 text-center">สิทธิ์สอบแก้ตัว (คุณครูเปิด/ปิด)</th>
+                  <th className="p-4 text-center">สิทธิ์สอบแก้ตัว</th>
                   <th className="p-4 text-center">ผลการประเมิน</th>
                   <th className="p-4 text-right">วันที่ทำสอบ</th>
                 </tr>
@@ -1777,12 +1690,9 @@ const TeacherAnalytics: React.FC<TeacherAnalyticsProps> = ({
                         )}
                       </td>
                       <td className="p-4 text-center">
-                        <button
-                          onClick={() => handleToggleRetake(r, !isRetakeAllowed)}
-                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black transition active:scale-95 shadow-sm flex items-center gap-1 mx-auto ${isRetakeAllowed ? 'bg-amber-500 hover:bg-amber-600 text-white' : 'bg-indigo-600 hover:bg-indigo-700 text-white'}`}
-                        >
-                          {isRetakeAllowed ? '🔒 ปิดสอบแก้ตัว' : '🔓 เปิดให้สอบแก้ตัว'}
-                        </button>
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black ${isRetakeAllowed ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'}`}>
+                          {isRetakeAllowed ? '🔓 เปิดสิทธิ์แล้ว' : '🔒 ปิดอยู่'}
+                        </span>
                       </td>
                       <td className="p-4 text-center">
                         <span className={`px-3 py-1 rounded-full text-[10px] font-black ${finalPass ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'}`}>
