@@ -160,7 +160,10 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
         }
         return updated;
       });
+      alert(allowRetake ? '🔓 เปิดสิทธิ์ให้นักเรียนสอบแก้ตัวเรียบร้อยแล้ว' : '🔒 ปิดสิทธิ์สอบแก้ตัวเรียบร้อยแล้ว');
       onRefresh();
+    } else {
+      alert('เกิดข้อผิดพลาดในการบันทึกสิทธิ์สอบแก้ตัว กรุณาลองใหม่อีกครั้ง');
     }
   };
 
@@ -172,15 +175,45 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
     });
 
     if (res) {
-      setLocalStats(prev => prev.map(item => {
-        if (String(item.assignmentId) === String(assignmentId)) {
-          const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
-          detObj.retakeAllowed = allowRetake;
-          return { ...item, details: detObj };
-        }
-        return item;
-      }));
+      setLocalStats(prev => {
+        const updated = prev.map(item => {
+          if (String(item.assignmentId) === String(assignmentId)) {
+            const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
+            detObj.retakeAllowed = allowRetake;
+            return { ...item, details: detObj };
+          }
+          return item;
+        });
+
+        const existingStudentIds = new Set(prev.filter(item => String(item.assignmentId) === String(assignmentId)).map(item => String(item.studentId)));
+        const targetAsg = assignments.find(a => String(a.id) === String(assignmentId));
+        const eligibleStudents = students.filter(s => (!targetAsg?.grade || targetAsg.grade === 'ALL' || s.grade === targetAsg.grade) && (!targetAsg?.targetClassrooms?.length || (s.classroom && targetAsg.targetClassrooms.includes(s.classroom))));
+        
+        const newEntries: ExamResult[] = [];
+        eligibleStudents.forEach(st => {
+          if (!existingStudentIds.has(String(st.id))) {
+            newEntries.push({
+              id: 'res_temp_' + st.id + '_' + Date.now(),
+              studentId: String(st.id),
+              studentName: st.name || '',
+              school: st.school || teacher.school,
+              assignmentId,
+              score: 0,
+              totalQuestions: 0,
+              subject: targetAsg?.subject || '',
+              timestamp: Date.now(),
+              details: { retakeAllowed: allowRetake }
+            });
+          }
+        });
+
+        return [...updated, ...newEntries];
+      });
+
+      alert(allowRetake ? '🔓 เปิดสิทธิ์ให้นักเรียนทุกคนสอบแก้ตัวเรียบร้อยแล้ว' : '🔒 ปิดสิทธิ์สอบแก้ตัวเรียบร้อยแล้ว');
       onRefresh();
+    } else {
+      alert('เกิดข้อผิดพลาดในการบันทึกสิทธิ์สอบแก้ตัว กรุณาลองใหม่อีกครั้ง');
     }
   };
 

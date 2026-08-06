@@ -116,7 +116,7 @@ export interface ExamResult {
   assignmentId?: string;
   category?: AssignmentCategory; 
   timeSpent?: number; // in seconds
-  details?: ExamResultDetail[];
+  details?: ExamResultDetail[] | string | Record<string, any> | any;
 }
 
 export interface Assignment {

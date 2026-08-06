@@ -138,9 +138,27 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
   };
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showUnansweredWarning, setShowUnansweredWarning] = useState(false);
+
+  const unansweredIndices = questions
+    .map((q, idx) => (!userAnswers[q.id] ? idx + 1 : null))
+    .filter((val): val is number => val !== null);
+
+  const handleAttemptSubmit = () => {
+    if (unansweredIndices.length > 0) {
+      setShowUnansweredWarning(true);
+    } else {
+      handleConfirmFinalSubmit(true);
+    }
+  };
 
   // 🎯 Complete Exam Submission
-  const handleConfirmFinalSubmit = async () => {
+  const handleConfirmFinalSubmit = async (force: boolean = false) => {
+    if (unansweredIndices.length > 0 && !force) {
+      setShowUnansweredWarning(true);
+      return;
+    }
+
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
@@ -158,6 +176,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
         };
       });
 
+      setShowUnansweredWarning(false);
       setShowReviewModal(false);
       await onFinish(finalScore, questions.length, assignmentIdRef.current, category, finalDetails);
     } finally {
@@ -358,7 +377,7 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
                     </button>
                   ) : (
                     <button 
-                      onClick={() => setShowReviewModal(true)}
+                      onClick={handleAttemptSubmit}
                       className="px-5 sm:px-7 py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-black text-sm sm:text-base rounded-2xl flex items-center gap-2 shadow-lg shadow-rose-200 transition active:scale-95 animate-pulse"
                     >
                       <FileCheck size={18}/> <span>ส่งข้อสอบ</span>
@@ -465,12 +484,83 @@ const PracticeMode: React.FC<PracticeModeProps> = ({ onFinish, onBack, questions
               </button>
 
               <button
-                onClick={handleConfirmFinalSubmit}
+                onClick={handleAttemptSubmit}
                 disabled={isSubmitting}
                 className="w-full sm:w-auto px-6 py-3 bg-rose-600 hover:bg-rose-700 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-rose-200 transition"
               >
                 {isSubmitting ? <Loader2 size={16} className="animate-spin" /> : <Send size={16}/>}
                 {isSubmitting ? 'กำลังส่งข้อสอบ...' : 'ยืนยันส่งข้อสอบ'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+
+      {/* ⚠️ Unanswered Questions Warning Modal */}
+      {showUnansweredWarning && createPortal(
+        <div className="fixed inset-0 bg-slate-900/85 z-[110] flex items-center justify-center p-4 font-prompt animate-fade-in">
+          <div className="bg-white rounded-[32px] max-w-lg w-full p-6 sm:p-8 space-y-6 shadow-2xl relative border-t-8 border-amber-500 my-auto text-center">
+            <div className="w-16 h-16 bg-amber-100 text-amber-600 rounded-2xl mx-auto flex items-center justify-center shadow-inner">
+              <AlertTriangle size={36} />
+            </div>
+
+            <div className="space-y-2">
+              <h3 className="text-xl font-black text-slate-800">
+                คุณยังไม่ได้ทำข้อสอบครบถ้วน!
+              </h3>
+              <p className="text-xs font-bold text-slate-500">
+                ยังมีข้อสอบอีก <span className="text-amber-600 font-black text-sm">{unansweredIndices.length} ข้อ</span> ที่น้องยังไม่ได้เลือกคำตอบ
+              </p>
+            </div>
+
+            {/* List of unanswered question numbers */}
+            <div className="bg-amber-50/80 border border-amber-200/80 rounded-2xl p-4 text-left space-y-2">
+              <span className="text-xs font-black text-amber-900 block">
+                📋 ข้อสอบที่ยังไม่ได้ทำ:
+              </span>
+              <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto custom-scrollbar pt-1">
+                {unansweredIndices.map(num => (
+                  <button
+                    key={num}
+                    onClick={() => {
+                      setCurrentIndex(num - 1);
+                      setShowUnansweredWarning(false);
+                      setShowReviewModal(false);
+                    }}
+                    className="px-2.5 py-1 bg-white hover:bg-amber-500 hover:text-white text-amber-800 font-black text-xs rounded-lg border border-amber-300 shadow-2xs transition active:scale-95"
+                    title={`คลิกเพื่อย้อนกลับไปทำข้อที่ ${num}`}
+                  >
+                    ข้อ {num}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <p className="text-[11px] font-bold text-slate-400 italic">
+              * แนะนำให้คลิกที่เลขข้อเพื่อย้อนกลับไปทำข้อสอบให้ครบเพื่อคะแนนสูงสุดนะคะ
+            </p>
+
+            <div className="flex flex-col sm:flex-row items-center gap-3 pt-2">
+              <button
+                onClick={() => {
+                  if (unansweredIndices.length > 0) {
+                    setCurrentIndex(unansweredIndices[0] - 1);
+                  }
+                  setShowUnansweredWarning(false);
+                  setShowReviewModal(false);
+                }}
+                className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs sm:text-sm rounded-xl shadow-lg shadow-indigo-200 transition active:scale-95 flex items-center justify-center gap-2"
+              >
+                ✏️ กลับไปทำข้อที่ยังไม่ได้ทำ (ข้อ {unansweredIndices[0]})
+              </button>
+
+              <button
+                onClick={() => handleConfirmFinalSubmit(true)}
+                disabled={isSubmitting}
+                className="w-full sm:w-auto px-4 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-600 font-bold text-xs rounded-xl transition shrink-0"
+              >
+                {isSubmitting ? 'กำลังส่ง...' : 'ยืนยันส่งข้อสอบแม้ทำไม่ครบ'}
               </button>
             </div>
           </div>
