@@ -476,16 +476,30 @@ app.post('/api', async (req, res) => {
 
             if (allowRetake) {
               const asgRows = await query(
-                'SELECT subject, category, school FROM assignments WHERE LOWER(TRIM(id)) = LOWER(TRIM(?)) LIMIT 1',
+                'SELECT subject, category, school, grade, target_classrooms FROM assignments WHERE LOWER(TRIM(id)) = LOWER(TRIM(?)) LIMIT 1',
                 [cleanAsgId]
               );
               const asg = (asgRows && asgRows.length > 0) ? asgRows[0] : {};
               const schoolName = asg.school || '';
-              const stRows = schoolName 
-                ? await query('SELECT id, name, school FROM students WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [schoolName]) 
-                : await query('SELECT id, name, school FROM students');
+              const asgGrade = asg.grade || '';
+              let targetRooms: string[] = [];
+              if (asg.target_classrooms) {
+                try {
+                  targetRooms = typeof asg.target_classrooms === 'string' ? JSON.parse(asg.target_classrooms) : (asg.target_classrooms || []);
+                } catch (e) {}
+              }
 
-              for (const st of stRows || []) {
+              const stRows = schoolName 
+                ? await query('SELECT id, name, school, grade, classroom FROM students WHERE LOWER(TRIM(school)) = LOWER(TRIM(?))', [schoolName]) 
+                : await query('SELECT id, name, school, grade, classroom FROM students');
+
+              const eligibleStRows = (stRows || []).filter((st: any) => {
+                if (asgGrade && asgGrade !== 'ALL' && String(st.grade || '').trim() !== String(asgGrade).trim()) return false;
+                if (targetRooms && targetRooms.length > 0 && st.classroom && !targetRooms.includes(String(st.classroom).trim())) return false;
+                return true;
+              });
+
+              for (const st of eligibleStRows) {
                 const existing = await query(
                   'SELECT id FROM exam_results WHERE LOWER(TRIM(student_id)) = LOWER(TRIM(?)) AND LOWER(TRIM(assignment_id)) = LOWER(TRIM(?)) LIMIT 1',
                   [String(st.id).trim(), cleanAsgId]
@@ -1665,7 +1679,11 @@ app.post('/api', async (req, res) => {
           if (allowRetake) {
             const asg = (db.assignments || []).find((a: any) => String(a.id) === String(assignmentId));
             const schoolName = asg?.school || '';
-            const eligibleStudents = (db.students || []).filter((s: any) => !schoolName || s.school === schoolName);
+            const eligibleStudents = (db.students || []).filter((s: any) => 
+              (!schoolName || s.school === schoolName) &&
+              (!asg?.grade || asg.grade === 'ALL' || String(s.grade || '').trim() === String(asg.grade).trim()) &&
+              (!asg?.targetClassrooms?.length || (s.classroom && asg.targetClassrooms.includes(String(s.classroom).trim())))
+            );
 
             eligibleStudents.forEach((st: any) => {
               const existing = (db.exam_results || []).find((r: any) => String(r.student_id || r.studentId) === String(st.id) && String(r.assignment_id || r.assignmentId) === String(assignmentId));

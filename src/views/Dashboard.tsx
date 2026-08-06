@@ -17,6 +17,25 @@ const GRADE_LABELS: Record<string, string> = {
     'M1': 'ม.1', 'M2': 'ม.2', 'M3': 'ม.3', 'ALL': 'ทุกชั้น' 
 };
 
+const safeParseDetails = (details: any): Record<string, any> => {
+  if (!details) return {};
+  let cur = details;
+  for (let i = 0; i < 3; i++) {
+    if (typeof cur === 'string') {
+      try {
+        const parsed = JSON.parse(cur);
+        if (parsed === cur) break;
+        cur = parsed;
+      } catch (e) {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  return (cur && typeof cur === 'object' && !Array.isArray(cur)) ? cur : {};
+};
+
 interface DashboardProps {
   student: Student;
   assignments?: Assignment[]; 
@@ -130,40 +149,54 @@ const Dashboard: React.FC<DashboardProps> = ({
 
   const retakeAssignments = useMemo(() => {
     const currentStudentId = String(student.id).trim();
-    const studentResults = examResults.filter(r => String(r.studentId).trim() === currentStudentId);
+    const currentStudentSchool = String(student.school || '').toLowerCase().trim();
+    const currentStudentGrade = String(student.grade || '').trim();
+    const currentStudentRoom = String(student.classroom || '').trim();
 
-    const retakes: { assignment: Assignment; initialScore: number; initialTotal: number; initialPct: number; retakeScore?: number; retakeTotal?: number; retakePct?: number; isRetakePassed?: boolean }[] = [];
+    const studentResults = examResults.filter(r => String(r.studentId || (r as any).student_id).trim() === currentStudentId);
+
+    const retakeMap = new Map<string, { assignment: Assignment; initialScore: number; initialTotal: number; initialPct: number; retakeScore?: number; retakeTotal?: number; retakePct?: number; isRetakePassed?: boolean }>();
 
     studentResults.forEach(res => {
-      if (!res.assignmentId) return;
-      const ass = assignments.find(a => String(a.id).trim() === String(res.assignmentId).trim());
+      const asgId = String(res.assignmentId || (res as any).assignment_id || '').trim();
+      if (!asgId) return;
+      const ass = assignments.find(a => String(a.id).trim() === asgId);
       if (!ass) return;
+
+      // School check
+      if (ass.school && currentStudentSchool && String(ass.school).toLowerCase().trim() !== currentStudentSchool) return;
+
+      // Grade check: ONLY allow if assignment grade matches student's grade or 'ALL'
+      if (ass.grade && ass.grade !== 'ALL' && String(ass.grade).trim() !== currentStudentGrade) return;
+
+      // Classroom check: if targetClassrooms is specified, student classroom must be included
+      const targetedRooms = ass.targetClassrooms || [];
+      if (targetedRooms.length > 0 && currentStudentRoom && !targetedRooms.includes(currentStudentRoom)) return;
 
       const cat = ass.category || res.category;
       const isMidtermOrFinal = cat === 'MIDTERM' || cat === 'FINAL' || (ass.title && (ass.title.includes('กลางภาค') || ass.title.includes('ปลายภาค')));
       if (!isMidtermOrFinal) return;
 
+      // Eligible for retake ONLY if teacher explicitly unlocked/opened retake for this student (retakeAllowed === true)
+      const isRetakeAllowed = examResults.some(er => 
+        String(er.studentId || (er as any).student_id).trim() === currentStudentId &&
+        String(er.assignmentId || (er as any).assignment_id).trim() === asgId &&
+        !!safeParseDetails(er.details)?.retakeAllowed
+      );
+
+      if (!isRetakeAllowed) return;
+
       const totalQ = res.totalQuestions || 1;
       const initialPct = Math.round((res.score / totalQ) * 100);
 
-      const detailsObj = typeof res.details === 'string' ? (() => { try { return JSON.parse(res.details); } catch(e) { return res.details; } })() : res.details;
+      const detailsObj = safeParseDetails(res.details);
       const retakeScoreVal = detailsObj?.retakeScore;
       const retakeTotalVal = detailsObj?.retakeTotal || totalQ;
       const retakePct = retakeScoreVal !== undefined ? Math.round((retakeScoreVal / retakeTotalVal) * 100) : undefined;
       const isRetakePassed = retakePct !== undefined ? retakePct >= 50 : false;
 
-      // Eligible for retake ONLY if teacher explicitly unlocked/opened retake for this student (retakeAllowed === true)
-      const isRetakeAllowed = examResults.some(er => 
-        String(er.studentId || (er as any).student_id).trim() === currentStudentId &&
-        String(er.assignmentId || (er as any).assignment_id).trim() === String(ass.id).trim() &&
-        (() => {
-          const d = typeof er.details === 'string' ? (() => { try { return JSON.parse(er.details); } catch(e) { return er.details; } })() : er.details;
-          return !!d?.retakeAllowed;
-        })()
-      );
-
-      if (isRetakeAllowed) {
-        retakes.push({
+      if (!retakeMap.has(asgId)) {
+        retakeMap.set(asgId, {
           assignment: ass,
           initialScore: res.score,
           initialTotal: totalQ,
@@ -173,11 +206,25 @@ const Dashboard: React.FC<DashboardProps> = ({
           retakePct,
           isRetakePassed
         });
+      } else {
+        const existing = retakeMap.get(asgId)!;
+        if (res.score > existing.initialScore || (retakeScoreVal !== undefined && existing.retakeScore === undefined)) {
+          retakeMap.set(asgId, {
+            assignment: ass,
+            initialScore: Math.max(res.score, existing.initialScore),
+            initialTotal: totalQ,
+            initialPct: Math.max(initialPct, existing.initialPct),
+            retakeScore: retakeScoreVal ?? existing.retakeScore,
+            retakeTotal: retakeTotalVal ?? existing.retakeTotal,
+            retakePct: retakePct ?? existing.retakePct,
+            isRetakePassed: isRetakePassed || existing.isRetakePassed
+          });
+        }
       }
     });
 
-    return retakes;
-  }, [examResults, assignments, student.id]);
+    return Array.from(retakeMap.values());
+  }, [examResults, assignments, student.id, student.school, student.grade, student.classroom]);
 
   const doneAssignmentIds = useMemo(() => {
     const currentStudentId = String(student.id).trim();
@@ -609,20 +656,40 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Bottom Actions */}
       <div className="grid grid-cols-2 gap-3 pt-2">
-          <MenuActionBtn onClick={() => onNavigate('stats')} icon={<BarChart3 size={24}/>} label="สถิติ" gradient="from-emerald-400 to-teal-600" />
-          <MenuActionBtn onClick={() => setView('rewards')} icon={<ShoppingBag size={24}/>} label="รางวัล" gradient="from-amber-400 to-orange-500" />
+          <MenuActionBtn 
+            onClick={() => onNavigate('stats')} 
+            icon={<BarChart3 size={24}/>} 
+            label="ดูผลคะแนนการทดสอบ" 
+            subtitle="ตรวจสอบคะแนนและประวัติการทำแบบทดสอบ"
+            gradient="from-emerald-500 to-teal-700" 
+          />
+          <MenuActionBtn 
+            onClick={() => setView('rewards')} 
+            icon={<ShoppingBag size={24}/>} 
+            label="รางวัลคนเก่ง" 
+            subtitle="นำดาวมาแลกรางวัลสำหรับคนเก่งทางนี้"
+            gradient="from-amber-400 to-orange-500" 
+          />
       </div>
     </div>
   );
 };
 
-const MenuActionBtn: React.FC<{ onClick: () => void, icon: React.ReactNode, label: string, gradient: string, isLive?: boolean }> = ({ onClick, icon, label, gradient, isLive }) => (
-    <button onClick={onClick} className={`group rounded-[30px] p-4 shadow-lg transition-all border-b-[6px] border-black/20 hover:-translate-y-1 hover:shadow-xl flex flex-col items-center justify-center gap-2 text-center h-28 relative overflow-hidden bg-gradient-to-br ${gradient} active:translate-y-1 active:border-b-0`}>
-        <div className="text-white transform group-hover:scale-125 transition-all duration-300 drop-shadow-xl">
+const MenuActionBtn: React.FC<{ 
+  onClick: () => void, 
+  icon: React.ReactNode, 
+  label: string, 
+  subtitle?: string,
+  gradient: string, 
+  isLive?: boolean 
+}> = ({ onClick, icon, label, subtitle, gradient, isLive }) => (
+    <button onClick={onClick} className={`group rounded-[28px] p-3 sm:p-4 shadow-lg transition-all border-b-[6px] border-black/20 hover:-translate-y-1 hover:shadow-xl flex flex-col items-center justify-center gap-1 text-center min-h-[7.5rem] relative overflow-hidden bg-gradient-to-br ${gradient} active:translate-y-1 active:border-b-0`}>
+        <div className="text-white transform group-hover:scale-110 transition-all duration-300 drop-shadow-xl mb-0.5">
             {icon}
             {isLive && <span className="absolute -top-1 -right-1 flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-300 opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-green-400 border border-white"></span></span>}
         </div>
-        <span className="font-black text-white text-[10px] tracking-tight drop-shadow-md">{label}</span>
+        <span className="font-black text-white text-xs sm:text-sm tracking-tight drop-shadow-md leading-tight">{label}</span>
+        {subtitle && <span className="text-[10px] text-white/95 font-bold leading-tight drop-shadow-sm px-0.5 mt-0.5">{subtitle}</span>}
     </button>
 );
 
