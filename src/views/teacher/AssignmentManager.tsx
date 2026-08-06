@@ -35,6 +35,25 @@ const GRADE_LABELS: Record<string, string> = {
     'M1': 'ม.1', 'M2': 'ม.2', 'M3': 'ม.3', 'ALL': 'ทุกชั้น' 
 };
 
+const safeParseDetails = (details: any): Record<string, any> => {
+  if (!details) return {};
+  let cur = details;
+  for (let i = 0; i < 3; i++) {
+    if (typeof cur === 'string') {
+      try {
+        const parsed = JSON.parse(cur);
+        if (parsed === cur) break;
+        cur = parsed;
+      } catch (e) {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  return (cur && typeof cur === 'object' && !Array.isArray(cur)) ? cur : {};
+};
+
 const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subjects, students, stats, teacher, onRefresh }) => {
   const [activeTab, setActiveTab] = useState<'CREATE' | 'UNITS' | 'EXAMS' | 'HISTORY'>('CREATE');
   const [unitSearch, setUnitSearch] = useState('');
@@ -127,13 +146,13 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
       mode: 'single'
     });
 
-    if (res) {
+    if (res && !(res as any).error) {
       setLocalStats(prev => {
         let found = false;
         const updated = prev.map(item => {
-          if ((r && String(item.id) === String(r.id)) || (String(item.studentId) === String(studentId) && String(item.assignmentId) === String(assignmentId))) {
+          if ((r && String(item.id) === String(r.id)) || (String(item.studentId || (item as any).student_id) === String(studentId) && String(item.assignmentId || (item as any).assignment_id) === String(assignmentId))) {
             found = true;
-            const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
+            const detObj = safeParseDetails(item.details);
             detObj.retakeAllowed = allowRetake;
             return { ...item, details: detObj };
           }
@@ -146,10 +165,10 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
             ...prev,
             {
               id: 'res_temp_' + studentId + '_' + Date.now(),
-              studentId,
+              studentId: String(studentId),
               studentName: st?.name || '',
               school: st?.school || teacher.school,
-              assignmentId,
+              assignmentId: String(assignmentId),
               score: 0,
               totalQuestions: 0,
               subject: selectedAssignment?.subject || '',
@@ -161,7 +180,7 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
         return updated;
       });
       alert(allowRetake ? '🔓 เปิดสิทธิ์ให้นักเรียนสอบแก้ตัวเรียบร้อยแล้ว' : '🔒 ปิดสิทธิ์สอบแก้ตัวเรียบร้อยแล้ว');
-      onRefresh();
+      if (onRefresh) onRefresh();
     } else {
       alert('เกิดข้อผิดพลาดในการบันทึกสิทธิ์สอบแก้ตัว กรุณาลองใหม่อีกครั้ง');
     }
@@ -174,44 +193,46 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
       mode: 'all'
     });
 
-    if (res) {
+    if (res && !(res as any).error) {
       setLocalStats(prev => {
         const updated = prev.map(item => {
-          if (String(item.assignmentId) === String(assignmentId)) {
-            const detObj = typeof item.details === 'string' ? (() => { try { return JSON.parse(item.details); } catch(e) { return {}; } })() : (item.details || {});
+          if (String(item.assignmentId || (item as any).assignment_id) === String(assignmentId)) {
+            const detObj = safeParseDetails(item.details);
             detObj.retakeAllowed = allowRetake;
             return { ...item, details: detObj };
           }
           return item;
         });
 
-        const existingStudentIds = new Set(prev.filter(item => String(item.assignmentId) === String(assignmentId)).map(item => String(item.studentId)));
+        const existingStudentIds = new Set(prev.filter(item => String(item.assignmentId || (item as any).assignment_id) === String(assignmentId)).map(item => String(item.studentId || (item as any).student_id)));
         const targetAsg = assignments.find(a => String(a.id) === String(assignmentId));
         const eligibleStudents = students.filter(s => (!targetAsg?.grade || targetAsg.grade === 'ALL' || s.grade === targetAsg.grade) && (!targetAsg?.targetClassrooms?.length || (s.classroom && targetAsg.targetClassrooms.includes(s.classroom))));
         
         const newEntries: ExamResult[] = [];
-        eligibleStudents.forEach(st => {
-          if (!existingStudentIds.has(String(st.id))) {
-            newEntries.push({
-              id: 'res_temp_' + st.id + '_' + Date.now(),
-              studentId: String(st.id),
-              studentName: st.name || '',
-              school: st.school || teacher.school,
-              assignmentId,
-              score: 0,
-              totalQuestions: 0,
-              subject: targetAsg?.subject || '',
-              timestamp: Date.now(),
-              details: { retakeAllowed: allowRetake }
-            });
-          }
-        });
+        if (allowRetake) {
+          eligibleStudents.forEach(st => {
+            if (!existingStudentIds.has(String(st.id))) {
+              newEntries.push({
+                id: 'res_temp_' + st.id + '_' + Date.now(),
+                studentId: String(st.id),
+                studentName: st.name || '',
+                school: st.school || teacher.school,
+                assignmentId: String(assignmentId),
+                score: 0,
+                totalQuestions: 0,
+                subject: targetAsg?.subject || '',
+                timestamp: Date.now(),
+                details: { retakeAllowed: allowRetake }
+              });
+            }
+          });
+        }
 
         return [...updated, ...newEntries];
       });
 
       alert(allowRetake ? '🔓 เปิดสิทธิ์ให้นักเรียนทุกคนสอบแก้ตัวเรียบร้อยแล้ว' : '🔒 ปิดสิทธิ์สอบแก้ตัวเรียบร้อยแล้ว');
-      onRefresh();
+      if (onRefresh) onRefresh();
     } else {
       alert('เกิดข้อผิดพลาดในการบันทึกสิทธิ์สอบแก้ตัว กรุณาลองใหม่อีกครั้ง');
     }
@@ -2347,13 +2368,11 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
                                         {students.filter(s => (!selectedAssignment.grade || selectedAssignment.grade === 'ALL' || s.grade === selectedAssignment.grade) && (!selectedAssignment.targetClassrooms?.length || (s.classroom && selectedAssignment.targetClassrooms.includes(s.classroom)))).map(s => { 
-                                            const r = localStats.filter(stat => String(stat.studentId || (stat as any).student_id) === String(s.id) && String(stat.assignmentId || (stat as any).assignment_id) === String(selectedAssignment.id)).sort((a,b)=>b.score - a.score)[0]; 
-                                            const detailsObj = typeof r?.details === 'string' ? (() => { try { return JSON.parse(r.details); } catch(e) { return {}; } })() : (r?.details || {});
                                             const matchingStats = localStats.filter(stat => String(stat.studentId || (stat as any).student_id) === String(s.id) && String(stat.assignmentId || (stat as any).assignment_id) === String(selectedAssignment.id));
-                                            const isRetakeAllowed = matchingStats.some(stat => {
-                                                const detObj = typeof stat.details === 'string' ? (() => { try { return JSON.parse(stat.details); } catch(e) { return {}; } })() : (stat.details || {});
-                                                return !!detObj?.retakeAllowed;
-                                            });
+                                            const realResult = matchingStats.filter(stat => (Number(stat.totalQuestions) || 0) > 0 || (Number(stat.score) || 0) > 0 || (Number(stat.timestamp) || 0) > 0).sort((a,b)=> Number(b.score) - Number(a.score))[0];
+                                            const r = realResult || matchingStats[0];
+                                            const detailsObj = safeParseDetails(r?.details);
+                                            const isRetakeAllowed = matchingStats.some(stat => !!safeParseDetails(stat.details)?.retakeAllowed);
                                             const retakeScore = detailsObj?.retakeScore;
                                             const retakeTotal = detailsObj?.retakeTotal;
 
@@ -2365,18 +2384,18 @@ const AssignmentManager: React.FC<AssignmentManagerProps> = ({ assignments, subj
                                                     </td>
                                                     <td className="py-3 px-3 text-center text-slate-600 text-xs font-bold">ห้อง {s.classroom}</td>
                                                     <td className="py-3 px-3 text-center">
-                                                        {r && r.score !== undefined ? (
+                                                        {realResult ? (
                                                             <span className="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg text-[11px] font-black border border-emerald-200/80 shadow-2xs">ส่งแล้ว</span>
                                                         ) : (
                                                             <span className="text-slate-400 italic text-xs font-bold">ยังไม่ส่ง</span>
                                                         )}
                                                     </td>
                                                     <td className="py-3 px-3 text-right font-black text-indigo-600 text-base">
-                                                        {r ? (
+                                                        {realResult ? (
                                                             <div>
-                                                                <div>{r.score}/{r.totalQuestions}</div>
+                                                                <div>{realResult.score}/{realResult.totalQuestions}</div>
                                                                 {retakeScore !== undefined && (
-                                                                    <div className="text-[10px] text-amber-600 font-bold mt-0.5">แก้ตัว: {retakeScore}/{retakeTotal || r.totalQuestions}</div>
+                                                                    <div className="text-[10px] text-amber-600 font-bold mt-0.5">แก้ตัว: {retakeScore}/{retakeTotal || realResult.totalQuestions}</div>
                                                                 )}
                                                             </div>
                                                         ) : '-'}

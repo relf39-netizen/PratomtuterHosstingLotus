@@ -142,6 +142,28 @@ const safeJsonParse = (input: any) => {
     return [];
 };
 
+function safeParseDetails(details: any): Record<string, any> {
+  if (!details) return {};
+  let cur = details;
+  for (let i = 0; i < 3; i++) {
+    if (typeof cur === 'string') {
+      try {
+        const parsed = JSON.parse(cur);
+        if (parsed === cur) break;
+        cur = parsed;
+      } catch (e) {
+        break;
+      }
+    } else {
+      break;
+    }
+  }
+  if (cur && typeof cur === 'object' && !Array.isArray(cur)) {
+    return cur;
+  }
+  return {};
+}
+
 // 🔄 Helper to fetch ALL rows from Supabase table handling pagination (> 1000 rows)
 async function fetchSupabaseTableAllRows(supabaseUrl: string, supabaseKey: string, table: string) {
   let allRows: any[] = [];
@@ -441,18 +463,22 @@ app.post('/api', async (req, res) => {
           const { resultId, assignmentId, studentId, allowRetake, mode } = args;
 
           if (mode === 'all' && assignmentId) {
-            const rows = await query('SELECT id, details FROM exam_results WHERE assignment_id = ? OR assignment_id = ?', [assignmentId, String(assignmentId)]);
+            const cleanAsgId = String(assignmentId || '').trim();
+            const rows = await query(
+              'SELECT id, details FROM exam_results WHERE LOWER(TRIM(assignment_id)) = LOWER(TRIM(?)) OR LOWER(TRIM(assignment_id)) = LOWER(TRIM(?))',
+              [cleanAsgId, cleanAsgId]
+            );
             for (const r of rows || []) {
-              let detailsObj: any = {};
-              try {
-                detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
-              } catch (e) {}
-              detailsObj.retakeAllowed = allowRetake;
+              const detailsObj = safeParseDetails(r.details);
+              detailsObj.retakeAllowed = !!allowRetake;
               await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), r.id]);
             }
 
             if (allowRetake) {
-              const asgRows = await query('SELECT subject, category, school FROM assignments WHERE id = ? OR id = ? LIMIT 1', [assignmentId, String(assignmentId)]);
+              const asgRows = await query(
+                'SELECT subject, category, school FROM assignments WHERE LOWER(TRIM(id)) = LOWER(TRIM(?)) LIMIT 1',
+                [cleanAsgId]
+              );
               const asg = (asgRows && asgRows.length > 0) ? asgRows[0] : {};
               const schoolName = asg.school || '';
               const stRows = schoolName 
@@ -461,14 +487,14 @@ app.post('/api', async (req, res) => {
 
               for (const st of stRows || []) {
                 const existing = await query(
-                  'SELECT id FROM exam_results WHERE (student_id = ? OR student_id = ?) AND (assignment_id = ? OR assignment_id = ?) LIMIT 1',
-                  [st.id, String(st.id), assignmentId, String(assignmentId)]
+                  'SELECT id FROM exam_results WHERE LOWER(TRIM(student_id)) = LOWER(TRIM(?)) AND LOWER(TRIM(assignment_id)) = LOWER(TRIM(?)) LIMIT 1',
+                  [String(st.id).trim(), cleanAsgId]
                 );
                 if (!existing || existing.length === 0) {
                   const detailsObj = { retakeAllowed: true };
                   await query(
                     'INSERT INTO exam_results (student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
-                    [st.id, st.name, st.school || schoolName || '', assignmentId, asg.subject || '', asg.category || 'GENERAL', Date.now(), JSON.stringify(detailsObj)]
+                    [String(st.id), st.name || '', st.school || schoolName || '', cleanAsgId, asg.subject || '', asg.category || 'GENERAL', Date.now(), JSON.stringify(detailsObj)]
                   );
                 }
               }
@@ -478,14 +504,17 @@ app.post('/api', async (req, res) => {
 
           let rowsToUpdate: any[] = [];
           if (resultId && !String(resultId).startsWith('res_temp_')) {
-            const rowsById = await query('SELECT * FROM exam_results WHERE id = ?', [resultId]);
+            const rowsById = await query('SELECT * FROM exam_results WHERE LOWER(TRIM(id)) = LOWER(TRIM(?))', [String(resultId).trim()]);
             if (rowsById && rowsById.length > 0) {
               rowsToUpdate = rowsById;
             }
           }
 
           if (studentId && assignmentId) {
-            const rowsByStudAsg = await query('SELECT * FROM exam_results WHERE student_id = ? AND assignment_id = ?', [studentId, assignmentId]);
+            const rowsByStudAsg = await query(
+              'SELECT * FROM exam_results WHERE LOWER(TRIM(student_id)) = LOWER(TRIM(?)) AND LOWER(TRIM(assignment_id)) = LOWER(TRIM(?))',
+              [String(studentId).trim(), String(assignmentId).trim()]
+            );
             if (rowsByStudAsg && rowsByStudAsg.length > 0) {
               const existingIds = new Set(rowsToUpdate.map(r => String(r.id)));
               for (const r of rowsByStudAsg) {
@@ -498,29 +527,26 @@ app.post('/api', async (req, res) => {
 
           if (rowsToUpdate.length > 0) {
             for (const rowToUpdate of rowsToUpdate) {
-              let detailsObj: any = {};
-              try {
-                detailsObj = typeof rowToUpdate.details === 'string' ? JSON.parse(rowToUpdate.details) : (rowToUpdate.details || {});
-              } catch (e) {}
-              detailsObj.retakeAllowed = allowRetake;
+              const detailsObj = safeParseDetails(rowToUpdate.details);
+              detailsObj.retakeAllowed = !!allowRetake;
               await query('UPDATE exam_results SET details = ? WHERE id = ?', [JSON.stringify(detailsObj), rowToUpdate.id]);
             }
             return res.json({ success: true });
           } else if (studentId && assignmentId) {
-            const detailsObj = { retakeAllowed: allowRetake };
+            const detailsObj = { retakeAllowed: !!allowRetake };
 
-            const stRows = await query('SELECT name, school FROM students WHERE id = ? LIMIT 1', [studentId]);
+            const stRows = await query('SELECT name, school FROM students WHERE LOWER(TRIM(id)) = LOWER(TRIM(?)) LIMIT 1', [String(studentId).trim()]);
             const studentName = (stRows && stRows.length > 0) ? stRows[0].name : '';
             const school = (stRows && stRows.length > 0) ? stRows[0].school : '';
 
-            const asgRows = await query('SELECT subject, category, school FROM assignments WHERE id = ? LIMIT 1', [assignmentId]);
+            const asgRows = await query('SELECT subject, category, school FROM assignments WHERE LOWER(TRIM(id)) = LOWER(TRIM(?)) LIMIT 1', [String(assignmentId).trim()]);
             const subject = (asgRows && asgRows.length > 0) ? asgRows[0].subject : '';
             const category = (asgRows && asgRows.length > 0) ? asgRows[0].category : '';
             const finalSchool = school || ((asgRows && asgRows.length > 0) ? asgRows[0].school : '');
 
             await query(
               'INSERT INTO exam_results (student_id, student_name, school, assignment_id, subject, category, score, total_questions, timestamp, details) VALUES (?, ?, ?, ?, ?, ?, 0, 0, ?, ?)',
-              [studentId, studentName, finalSchool, assignmentId, subject, category, Date.now(), JSON.stringify(detailsObj)]
+              [String(studentId), studentName, finalSchool, String(assignmentId), subject, category, Date.now(), JSON.stringify(detailsObj)]
             );
             return res.json({ success: true });
           }
@@ -1630,11 +1656,8 @@ app.post('/api', async (req, res) => {
         if (mode === 'all' && assignmentId) {
           (db.exam_results || []).forEach((r: any) => {
             if (String(r.assignment_id || r.assignmentId) === String(assignmentId)) {
-              let detailsObj: any = {};
-              try {
-                detailsObj = typeof r.details === 'string' ? JSON.parse(r.details) : (r.details || {});
-              } catch (e) {}
-              detailsObj.retakeAllowed = allowRetake;
+              const detailsObj = safeParseDetails(r.details);
+              detailsObj.retakeAllowed = !!allowRetake;
               r.details = JSON.stringify(detailsObj);
             }
           });
@@ -1650,13 +1673,13 @@ app.post('/api', async (req, res) => {
                 if (!db.exam_results) db.exam_results = [];
                 db.exam_results.push({
                   id: generateId('res_'),
-                  student_id: st.id,
-                  studentId: st.id,
+                  student_id: String(st.id),
+                  studentId: String(st.id),
                   student_name: st.name || '',
                   studentName: st.name || '',
                   school: st.school || schoolName,
-                  assignment_id: assignmentId,
-                  assignmentId: assignmentId,
+                  assignment_id: String(assignmentId),
+                  assignmentId: String(assignmentId),
                   subject: asg?.subject || '',
                   category: asg?.category || '',
                   score: 0,
@@ -1681,11 +1704,8 @@ app.post('/api', async (req, res) => {
 
         if (matchingRows.length > 0) {
           matchingRows.forEach((rItem: any) => {
-            let detailsObj: any = {};
-            try {
-              detailsObj = typeof rItem.details === 'string' ? JSON.parse(rItem.details) : (rItem.details || {});
-            } catch (e) {}
-            detailsObj.retakeAllowed = allowRetake;
+            const detailsObj = safeParseDetails(rItem.details);
+            detailsObj.retakeAllowed = !!allowRetake;
             rItem.details = JSON.stringify(detailsObj);
           });
           saveJsonDb(db);
