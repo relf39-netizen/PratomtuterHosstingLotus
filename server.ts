@@ -3,7 +3,6 @@ import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import mysql from 'mysql2/promise';
 
 dotenv.config();
@@ -2692,11 +2691,16 @@ async function startServer() {
   const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
 
   if (process.env.NODE_ENV !== "production" && !isInsideDist && !hasDist) {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
+    try {
+      const { createServer: createViteServer } = await import('vite');
+      const vite = await createViteServer({
+        server: { middlewareMode: true },
+        appType: "spa",
+      });
+      app.use(vite.middlewares);
+    } catch (e) {
+      console.warn("Vite not available in dev mode, falling back to static files:", e);
+    }
   } else {
     app.use(express.static(distPath));
     app.get('*all', (req, res) => {
