@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Teacher, RegistrationRequest } from '../../types';
 import { UserCog, CheckCircle, Save, User, Trash2, Award, Briefcase, RefreshCw, ShieldAlert, X, Loader2, GraduationCap, Check, UserPlus, ShieldCheck, Shield } from 'lucide-react';
 import { supabase } from '../../services/firebaseConfig';
-import { manageTeacher, approveRegistration, rejectRegistration } from '../../services/api';
+import { manageTeacher, approveRegistration, rejectRegistration, getSchoolPendingRegistrations } from '../../services/api';
 
 interface TeacherManagerProps {
   schoolName: string;
@@ -43,7 +43,7 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({ schoolName, currentAdmi
   const loadData = async () => {
     try {
         const { data: tData } = await supabase.from('teachers').select('*').eq('school', schoolName).order('name');
-        const { data: schoolData } = await supabase.from('schools').select('id').eq('name', schoolName).single();
+        const { data: schoolData } = await supabase.from('schools').select('*').eq('name', schoolName).single();
         
         if (tData) {
             setTeachers(tData.map((t: any) => ({
@@ -54,12 +54,54 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({ schoolName, currentAdmi
             })));
         }
 
-        if (schoolData) {
-            const { data: rData } = await supabase.from('registration_requests').select('*').eq('school_id', schoolData.id).eq('status', 'pending').eq('type', 'TEACHER');
-            if (rData) {
-                setRequests(rData.map((r:any) => ({ ...r, citizenId: r.citizen_id, schoolId: r.school_id })));
+        // Fetch pending registrations specifically isolated to this school
+        let pendingList: RegistrationRequest[] = [];
+        try {
+            pendingList = await getSchoolPendingRegistrations(schoolName, schoolData?.id);
+        } catch (err) {
+            console.error("Failed to load school registrations via api:", err);
+        }
+
+        // Fallback with supabase if api returned empty but schoolData exists
+        if ((!pendingList || pendingList.length === 0) && schoolData) {
+            const { data: rData } = await supabase
+                .from('registration_requests')
+                .select('*')
+                .eq('school_id', schoolData.id)
+                .eq('status', 'pending')
+                .eq('type', 'TEACHER');
+            if (rData && Array.isArray(rData)) {
+                pendingList = rData.map((r: any) => ({
+                    ...r,
+                    citizenId: r.citizen_id || r.citizenId,
+                    schoolId: r.school_id || r.schoolId,
+                    schoolName: r.school_name || r.schoolName,
+                    schoolCode: r.school_code || r.schoolCode,
+                    timestamp: Number(r.timestamp || Date.now())
+                }));
             }
         }
+
+        // Strict client-side isolation: MUST belong to this school, status must be pending, type must be TEACHER
+        const cleanSchoolName = String(schoolName || '').trim().toLowerCase();
+        const schoolIdStr = schoolData?.id ? String(schoolData.id).trim() : '';
+        const schoolCodeStr = schoolData?.school_code ? String(schoolData.school_code).trim() : '';
+
+        const strictlyMySchoolRequests = (pendingList || []).filter(r => {
+            const isPending = String(r.status || '').toLowerCase() === 'pending';
+            const isTeacher = String(r.type || '').toUpperCase() === 'TEACHER';
+            const rSchoolName = String(r.schoolName || (r as any).school_name || '').trim().toLowerCase();
+            const rSchoolId = String(r.schoolId || (r as any).school_id || '').trim();
+            const rSchoolCode = String(r.schoolCode || (r as any).school_code || '').trim();
+
+            const matchesName = cleanSchoolName && rSchoolName === cleanSchoolName;
+            const matchesId = schoolIdStr && rSchoolId === schoolIdStr;
+            const matchesCode = schoolCodeStr && rSchoolCode === schoolCodeStr;
+
+            return isPending && isTeacher && (matchesName || matchesId || matchesCode);
+        });
+
+        setRequests(strictlyMySchoolRequests);
     } catch (e) { console.error(e); }
   };
 

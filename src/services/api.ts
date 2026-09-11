@@ -538,6 +538,15 @@ export const getAllPendingRegistrations = async (): Promise<RegistrationRequest[
     }
 };
 
+export const getSchoolPendingRegistrations = async (schoolName: string, schoolId?: string): Promise<RegistrationRequest[]> => {
+    try {
+        const res = await apiCall('getSchoolPendingRegistrations', { schoolName, schoolId });
+        return (res.data || []).map(mapRegistrationFromDB);
+    } catch (e) {
+        return [];
+    }
+};
+
 export const manageStudent = async (params: any) => {
     try {
         const { action, ...payload } = params;

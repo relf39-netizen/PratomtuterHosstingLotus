@@ -280,14 +280,19 @@ app.post('/api', async (req, res) => {
     if (pool) {
       switch (action) {
         case 'supabaseQuery': {
-          const { table, operation, selectFields, filterField, filterVal, isSingle, orderCol, limitNum, payload } = args;
+          const { table, operation, selectFields, filterField, filterVal, filters, isSingle, orderCol, limitNum, payload } = args;
           try {
             if (operation === 'select') {
               let sql = `SELECT ${selectFields || '*'} FROM \`${table}\``;
               const params: any[] = [];
-              if (filterField && filterVal !== null) {
-                sql += ` WHERE \`${filterField}\` = ?`;
-                params.push(filterVal);
+              const activeFilters = Array.isArray(filters) && filters.length > 0
+                ? filters
+                : (filterField && filterVal !== null ? [{ field: filterField, value: filterVal }] : []);
+
+              if (activeFilters.length > 0) {
+                const whereParts = activeFilters.map((f: any) => `\`${f.field}\` = ?`);
+                sql += ` WHERE ${whereParts.join(' AND ')}`;
+                params.push(...activeFilters.map((f: any) => f.value));
               }
               if (orderCol) {
                 sql += ` ORDER BY \`${orderCol}\` ASC`;
@@ -820,6 +825,45 @@ app.post('/api', async (req, res) => {
         case 'getAllPendingRegistrations': {
           const rows = await query('SELECT * FROM registration_requests WHERE status = "pending"');
           return res.json({ data: rows });
+        }
+
+        case 'getSchoolPendingRegistrations': {
+          const { schoolName, schoolId } = args;
+          const cleanSchoolName = String(schoolName || '').trim();
+          let targetSchoolId = schoolId ? String(schoolId).trim() : null;
+          let schoolCode: string | null = null;
+
+          if (cleanSchoolName) {
+            const schoolRows = await query('SELECT id, school_code FROM schools WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1', [cleanSchoolName]);
+            if (schoolRows && schoolRows.length > 0) {
+              if (!targetSchoolId) targetSchoolId = String(schoolRows[0].id);
+              if (schoolRows[0].school_code) schoolCode = String(schoolRows[0].school_code).trim();
+            }
+          }
+
+          const conds: string[] = [];
+          const params: any[] = [];
+
+          if (cleanSchoolName) {
+            conds.push('LOWER(TRIM(school_name)) = LOWER(TRIM(?))');
+            params.push(cleanSchoolName);
+          }
+          if (targetSchoolId) {
+            conds.push('LOWER(TRIM(school_id)) = LOWER(TRIM(?))');
+            params.push(targetSchoolId);
+          }
+          if (schoolCode) {
+            conds.push('LOWER(TRIM(school_code)) = LOWER(TRIM(?))');
+            params.push(schoolCode);
+          }
+
+          if (conds.length === 0) {
+            return res.json({ data: [] });
+          }
+
+          const sql = `SELECT * FROM registration_requests WHERE status = "pending" AND type = "TEACHER" AND (${conds.join(' OR ')}) ORDER BY timestamp DESC`;
+          const rows = await query(sql, params);
+          return res.json({ data: rows || [] });
         }
 
         case 'manageStudent': {
@@ -1502,7 +1546,7 @@ app.post('/api', async (req, res) => {
 
     switch (action) {
       case 'supabaseQuery': {
-        const { table, operation, selectFields, filterField, filterVal, isSingle, orderCol, limitNum, payload } = args;
+        const { table, operation, selectFields, filterField, filterVal, filters, isSingle, orderCol, limitNum, payload } = args;
         
         // Dynamically initialize table array if not exists
         if (!db[table]) {
@@ -1511,8 +1555,14 @@ app.post('/api', async (req, res) => {
         
         if (operation === 'select') {
           let rows = db[table];
-          if (filterField && filterVal !== null) {
-            rows = rows.filter((r: any) => String(r[filterField] || '') === String(filterVal));
+          const activeFilters = Array.isArray(filters) && filters.length > 0
+            ? filters
+            : (filterField && filterVal !== null ? [{ field: filterField, value: filterVal }] : []);
+
+          if (activeFilters.length > 0) {
+            rows = rows.filter((r: any) => {
+              return activeFilters.every((f: any) => String(r[f.field] ?? '') === String(f.value ?? ''));
+            });
           }
           if (orderCol) {
             rows = [...rows].sort((a: any, b: any) => String(a[orderCol] || '').localeCompare(String(b[orderCol] || '')));
@@ -2106,6 +2156,28 @@ app.post('/api', async (req, res) => {
 
       case 'getAllPendingRegistrations': {
         const rows = db.registration_requests.filter((r: any) => r.status === 'pending');
+        return res.json({ data: rows });
+      }
+
+      case 'getSchoolPendingRegistrations': {
+        const { schoolName, schoolId } = args;
+        const cleanSchoolName = String(schoolName || '').trim().toLowerCase();
+        const targetSchool = (db.schools || []).find((s: any) => String(s.name || '').trim().toLowerCase() === cleanSchoolName);
+        const targetSchoolId = schoolId ? String(schoolId).trim() : (targetSchool ? String(targetSchool.id) : null);
+        const targetSchoolCode = targetSchool?.school_code ? String(targetSchool.school_code).trim() : null;
+
+        const rows = (db.registration_requests || []).filter((r: any) => {
+          if (String(r.status || '').toLowerCase() !== 'pending' || String(r.type || '').toUpperCase() !== 'TEACHER') return false;
+          const rSchoolName = String(r.school_name || r.schoolName || '').trim().toLowerCase();
+          const rSchoolId = String(r.school_id || r.schoolId || '').trim();
+          const rSchoolCode = String(r.school_code || r.schoolCode || '').trim();
+
+          if (cleanSchoolName && rSchoolName === cleanSchoolName) return true;
+          if (targetSchoolId && rSchoolId === targetSchoolId) return true;
+          if (targetSchoolCode && rSchoolCode === targetSchoolCode) return true;
+          return false;
+        }).sort((a: any, b: any) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
+
         return res.json({ data: rows });
       }
 

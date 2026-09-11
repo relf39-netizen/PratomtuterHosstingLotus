@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 
 // ✅ Fix: Corrected paths from ../../ to ../ to resolve Vite build error
-import { getTeacherDashboard, deleteAssignment, getSubjects, addAssignment, addQuestion, getTeacherById, getQuestionsByAssignment, getClassrooms, updateSchoolSettings } from '../services/api';
+import { getTeacherDashboard, deleteAssignment, getSubjects, addAssignment, addQuestion, getTeacherById, getQuestionsByAssignment, getClassrooms, updateSchoolSettings, getSchoolPendingRegistrations } from '../services/api';
 import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService';
 
 import StudentManager from './teacher/StudentManager';
@@ -65,6 +65,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
   const [loadingQuestions, setLoadingQuestions] = useState(false);
 
   const [hasApiKey, setHasApiKey] = useState(false);
+  const [pendingTeacherCount, setPendingTeacherCount] = useState(0);
 
   // 👔 ตรวจสอบสิทธิ์ผู้บริหาร (Director / Executive)
   const isExecutive = useMemo(() => {
@@ -170,6 +171,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
     setStats(data.results || []);
     setAssignments(data.assignments || []);
     setAllClassrooms(rooms);
+
+    if (teacher.school) {
+      getSchoolPendingRegistrations(teacher.school, data.school?.id)
+        .then(reqs => setPendingTeacherCount(reqs ? reqs.length : 0))
+        .catch(() => {});
+    }
   };
 
   const toggleStudentManagementSms = async () => {
@@ -392,7 +399,16 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                 )}
                 
                 <MenuCard icon={<User size={32}/>} title="ข้อมูลของฉัน" desc="แก้ไขประวัติ/API Key" color="from-blue-500 to-indigo-600 shadow-indigo-100" onClick={()=>setActiveTab('profile')}/>
-                {(isAdminUser || isExecutive) && <MenuCard icon={<Settings size={32}/>} title="ตั้งค่าโรงเรียน" desc="จัดการนักเรียน/ครู/ห้องเรียน" color="from-cyan-500 to-blue-500 shadow-cyan-100" onClick={()=>setActiveTab('school-settings')}/>}
+                {(isAdminUser || isExecutive) && (
+                    <div className="relative">
+                        <MenuCard icon={<Settings size={32}/>} title="ตั้งค่าโรงเรียน" desc="จัดการนักเรียน/ครู/ห้องเรียน" color="from-cyan-500 to-blue-500 shadow-cyan-100" onClick={()=>setActiveTab('school-settings')}/>
+                        {pendingTeacherCount > 0 && (
+                            <div className="absolute top-3 right-3 bg-rose-500 text-white text-[11px] font-black px-2.5 py-0.5 rounded-full shadow-lg animate-bounce border-2 border-white flex items-center gap-1 z-10">
+                                ครูใหม่ +{pendingTeacherCount}
+                            </div>
+                        )}
+                    </div>
+                )}
                 <MenuCard icon={<List size={32}/>} title="จัดการรายวิชา" desc="เพิ่ม/ลบ วิชาที่สอน" color="from-rose-500 to-pink-600 shadow-pink-100" onClick={()=>setActiveTab('subjects')}/>
                 <MenuCard icon={<UserPlus size={32}/>} title="จัดการนักเรียน" desc="รายชื่อและข้อมูลนักเรียน" color="from-purple-500 to-indigo-600 shadow-purple-100" onClick={()=>setActiveTab('students')}/>
                 <MenuCard icon={<Calendar size={32}/>} title="สร้างแบบทดสอบ" desc="สร้างข้อสอบหน่วยการเรียนรู้กลางภาคและปลายภาค" color="from-orange-500 to-amber-600 shadow-orange-100" onClick={()=>setActiveTab('assignments')}/>
@@ -430,7 +446,14 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                             <div className="bg-white p-1 rounded-2xl flex w-full md:w-auto shadow-sm border border-slate-100">
                                 <button onClick={() => setSettingsTab('students')} className={`flex-1 md:flex-none px-6 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${settingsTab === 'students' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-800'}`}><UserPlus size={16}/> จัดการนักเรียน</button>
                                 <button onClick={() => setSettingsTab('classrooms')} className={`flex-1 md:flex-none px-6 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${settingsTab === 'classrooms' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-800'}`}><LayoutGrid size={16}/> ห้องเรียน</button>
-                                <button onClick={() => setSettingsTab('teachers')} className={`flex-1 md:flex-none px-6 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 ${settingsTab === 'teachers' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-800'}`}><UserCog size={16}/> บุคลากรครู</button>
+                                <button onClick={() => setSettingsTab('teachers')} className={`flex-1 md:flex-none px-6 py-2 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 relative ${settingsTab === 'teachers' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:text-slate-800'}`}>
+                                    <UserCog size={16}/> บุคลากรครู
+                                    {pendingTeacherCount > 0 && (
+                                        <span className="bg-rose-500 text-white text-[10px] px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                                            {pendingTeacherCount}
+                                        </span>
+                                    )}
+                                </button>
                             </div>
                         </div>
 

@@ -59,6 +59,7 @@ export const supabase = {
     }),
     from: (table: string) => {
         let selectFields = '*';
+        const filters: Array<{ field: string, value: any }> = [];
         let filterField: string | null = null;
         let filterVal: any = null;
         let limitNum: number | null = null;
@@ -73,6 +74,7 @@ export const supabase = {
             eq: (field: string, value: any) => {
                 filterField = field;
                 filterVal = value;
+                filters.push({ field, value });
                 return builder;
             },
             order: (col: string) => {
@@ -99,6 +101,7 @@ export const supabase = {
                     selectFields,
                     filterField,
                     filterVal,
+                    filters,
                     isSingle,
                     orderCol,
                     limitNum
