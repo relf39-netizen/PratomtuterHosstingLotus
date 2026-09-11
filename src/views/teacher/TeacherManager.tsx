@@ -82,26 +82,49 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({ schoolName, currentAdmi
             }
         }
 
-        // Strict client-side isolation: MUST belong to this school, status must be pending, type must be TEACHER
-        const cleanSchoolName = String(schoolName || '').trim().toLowerCase();
-        const schoolIdStr = schoolData?.id ? String(schoolData.id).trim() : '';
-        const schoolCodeStr = schoolData?.school_code ? String(schoolData.school_code).trim() : '';
+    // Normalize helper for robust school name matching (stripping prefixes and whitespace)
+    const norm = (s: any) => {
+        if (!s) return '';
+        let str = String(s).trim().toLowerCase();
+        for (const p of ['โรงเรียน', 'รร.', 'รร ', 'รร']) {
+            if (str.startsWith(p)) {
+                str = str.substring(p.length).trim();
+                break;
+            }
+        }
+        return str.replace(/\s+/g, '');
+    };
 
-        const strictlyMySchoolRequests = (pendingList || []).filter(r => {
-            const isPending = String(r.status || '').toLowerCase() === 'pending';
-            const isTeacher = String(r.type || '').toUpperCase() === 'TEACHER';
-            const rSchoolName = String(r.schoolName || (r as any).school_name || '').trim().toLowerCase();
-            const rSchoolId = String(r.schoolId || (r as any).school_id || '').trim();
-            const rSchoolCode = String(r.schoolCode || (r as any).school_code || '').trim();
+    // Strict client-side isolation: MUST belong to this school, status must be pending, type must be TEACHER
+    const cleanSchoolName = String(schoolName || '').trim().toLowerCase();
+    const normCleanSchool = norm(cleanSchoolName);
+    const rawSchoolId = schoolData?.id ? String(schoolData.id).trim() : '';
+    const validSchoolId = (rawSchoolId && rawSchoolId !== 'NEW_SCHOOL') ? rawSchoolId : '';
+    const rawSchoolCode = schoolData?.school_code ? String(schoolData.school_code).trim() : '';
+    const validSchoolCode = (rawSchoolCode && rawSchoolCode !== 'NEW_SCHOOL') ? rawSchoolCode : '';
 
-            const matchesName = cleanSchoolName && rSchoolName === cleanSchoolName;
-            const matchesId = schoolIdStr && rSchoolId === schoolIdStr;
-            const matchesCode = schoolCodeStr && rSchoolCode === schoolCodeStr;
+    const strictlyMySchoolRequests = (pendingList || []).filter(r => {
+        const isPending = String(r.status || '').toLowerCase() === 'pending';
+        const isTeacher = String(r.type || '').toUpperCase() === 'TEACHER';
+        if (!isPending || !isTeacher) return false;
 
-            return isPending && isTeacher && (matchesName || matchesId || matchesCode);
-        });
+        const rawRSchoolName = String(r.schoolName || (r as any).school_name || '').trim().toLowerCase();
+        const normRSchool = norm(rawRSchoolName);
+        const rSchoolId = String(r.schoolId || (r as any).school_id || '').trim();
+        const rSchoolCode = String(r.schoolCode || (r as any).school_code || '').trim();
 
-        setRequests(strictlyMySchoolRequests);
+        // Check ID match only if neither is NEW_SCHOOL
+        const matchesId = validSchoolId && rSchoolId && rSchoolId !== 'NEW_SCHOOL' && rSchoolId === validSchoolId;
+        // Check Code match only if valid 8-digit code or specific code
+        const matchesCode = validSchoolCode && rSchoolCode && rSchoolCode !== 'NEW_SCHOOL' && rSchoolCode === validSchoolCode;
+        // Check Name match (both exact lowercase and prefix-stripped normalized)
+        const matchesName = (cleanSchoolName && rawRSchoolName && cleanSchoolName === rawRSchoolName) ||
+                            (normCleanSchool && normRSchool && normCleanSchool === normRSchool);
+
+        return Boolean(matchesName || matchesId || matchesCode);
+    });
+
+    setRequests(strictlyMySchoolRequests);
     } catch (e) { console.error(e); }
   };
 

@@ -830,14 +830,14 @@ app.post('/api', async (req, res) => {
         case 'getSchoolPendingRegistrations': {
           const { schoolName, schoolId } = args;
           const cleanSchoolName = String(schoolName || '').trim();
-          let targetSchoolId = schoolId ? String(schoolId).trim() : null;
+          let targetSchoolId = (schoolId && String(schoolId).trim() !== 'NEW_SCHOOL') ? String(schoolId).trim() : null;
           let schoolCode: string | null = null;
 
           if (cleanSchoolName) {
             const schoolRows = await query('SELECT id, school_code FROM schools WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1', [cleanSchoolName]);
             if (schoolRows && schoolRows.length > 0) {
-              if (!targetSchoolId) targetSchoolId = String(schoolRows[0].id);
-              if (schoolRows[0].school_code) schoolCode = String(schoolRows[0].school_code).trim();
+              if (!targetSchoolId && String(schoolRows[0].id) !== 'NEW_SCHOOL') targetSchoolId = String(schoolRows[0].id);
+              if (schoolRows[0].school_code && String(schoolRows[0].school_code).trim() !== 'NEW_SCHOOL') schoolCode = String(schoolRows[0].school_code).trim();
             }
           }
 
@@ -848,11 +848,11 @@ app.post('/api', async (req, res) => {
             conds.push('LOWER(TRIM(school_name)) = LOWER(TRIM(?))');
             params.push(cleanSchoolName);
           }
-          if (targetSchoolId) {
+          if (targetSchoolId && targetSchoolId !== 'NEW_SCHOOL') {
             conds.push('LOWER(TRIM(school_id)) = LOWER(TRIM(?))');
             params.push(targetSchoolId);
           }
-          if (schoolCode) {
+          if (schoolCode && schoolCode !== 'NEW_SCHOOL') {
             conds.push('LOWER(TRIM(school_code)) = LOWER(TRIM(?))');
             params.push(schoolCode);
           }
@@ -2163,8 +2163,8 @@ app.post('/api', async (req, res) => {
         const { schoolName, schoolId } = args;
         const cleanSchoolName = String(schoolName || '').trim().toLowerCase();
         const targetSchool = (db.schools || []).find((s: any) => String(s.name || '').trim().toLowerCase() === cleanSchoolName);
-        const targetSchoolId = schoolId ? String(schoolId).trim() : (targetSchool ? String(targetSchool.id) : null);
-        const targetSchoolCode = targetSchool?.school_code ? String(targetSchool.school_code).trim() : null;
+        const targetSchoolId = (schoolId && String(schoolId).trim() !== 'NEW_SCHOOL') ? String(schoolId).trim() : (targetSchool && String(targetSchool.id) !== 'NEW_SCHOOL' ? String(targetSchool.id) : null);
+        const targetSchoolCode = (targetSchool?.school_code && String(targetSchool.school_code).trim() !== 'NEW_SCHOOL') ? String(targetSchool.school_code).trim() : null;
 
         const rows = (db.registration_requests || []).filter((r: any) => {
           if (String(r.status || '').toLowerCase() !== 'pending' || String(r.type || '').toUpperCase() !== 'TEACHER') return false;
@@ -2173,8 +2173,8 @@ app.post('/api', async (req, res) => {
           const rSchoolCode = String(r.school_code || r.schoolCode || '').trim();
 
           if (cleanSchoolName && rSchoolName === cleanSchoolName) return true;
-          if (targetSchoolId && rSchoolId === targetSchoolId) return true;
-          if (targetSchoolCode && rSchoolCode === targetSchoolCode) return true;
+          if (targetSchoolId && targetSchoolId !== 'NEW_SCHOOL' && rSchoolId === targetSchoolId) return true;
+          if (targetSchoolCode && targetSchoolCode !== 'NEW_SCHOOL' && rSchoolCode === targetSchoolCode) return true;
           return false;
         }).sort((a: any, b: any) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
 
