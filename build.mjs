@@ -18,9 +18,13 @@ async function main() {
   const minutes = String(now.getMinutes()).padStart(2, '0');
   const timestampStr = `${day} ${month} ${year} เวลา ${hours}:${minutes} น.`;
 
-  const versionContent = `// Auto-generated during build\nexport const APP_VERSION = "v1.1.2";\nexport const BUILD_TIME = "${timestampStr}";\n`;
-  fs.writeFileSync('./src/version.ts', versionContent, 'utf-8');
-  console.log(`✅ Version updated: ${timestampStr}`);
+  if (process.env.UPDATE_VERSION === 'true') {
+    const versionContent = `// Auto-generated during build\nexport const APP_VERSION = "v1.1.2";\nexport const BUILD_TIME = "${timestampStr}";\n`;
+    fs.writeFileSync('./src/version.ts', versionContent, 'utf-8');
+    console.log(`✅ Version updated: ${timestampStr}`);
+  } else {
+    console.log(`ℹ️ Using current version from src/version.ts`);
+  }
 
   console.log('--- Starting Programmatic Vite Client Build ---');
   try {

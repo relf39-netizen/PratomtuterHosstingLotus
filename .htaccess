@@ -1,0 +1,55 @@
+# ==============================================================================
+# Pratom Smart Tutor - cPanel / Apache / LiteSpeed Configuration
+# ==============================================================================
+
+# 1. Prioritize dist/index.html for directory indexes
+DirectoryIndex dist/index.html index.html
+
+# 2. Correct MIME Types
+<IfModule mod_mime.c>
+  AddType text/javascript .js .mjs
+  AddType text/css .css
+  AddType image/svg+xml .svg
+  AddType application/wasm .wasm
+  AddType application/json .json
+  AddType application/manifest+json .webmanifest .json
+</IfModule>
+
+# 3. Prevent HTML caching so deployments update immediately
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|htm)$">
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Pragma "no-cache"
+    Header set Expires 0
+  </FilesMatch>
+</IfModule>
+
+# 4. URL Rewriting for Static Assets and SPA
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Allow all API requests to pass through to Passenger / Node.js
+  RewriteCond %{REQUEST_URI} ^/api [NC]
+  RewriteRule .* - [L]
+
+  # Block direct access to raw TypeScript and sensitive configuration files
+  RewriteRule ^src/ - [F,L]
+  RewriteRule \.(ts|tsx|env|json|mjs|config\.ts)$ - [F,L]
+
+  # If requesting domain root '/', serve dist/index.html directly
+  RewriteRule ^$ dist/index.html [L]
+
+  # If the requested file or directory exists inside dist/, serve from dist/
+  RewriteCond %{REQUEST_URI} !^/dist/
+  RewriteCond %{DOCUMENT_ROOT}/dist%{REQUEST_URI} -f [OR]
+  RewriteCond %{DOCUMENT_ROOT}/dist%{REQUEST_URI} -d
+  RewriteRule ^(.*)$ dist/$1 [L]
+
+  # SPA Fallback: Route all non-file, non-API requests to dist/index.html
+  RewriteCond %{REQUEST_URI} !^/dist/
+  RewriteCond %{REQUEST_URI} !^/api/
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^.*$ dist/index.html [L]
+</IfModule>
