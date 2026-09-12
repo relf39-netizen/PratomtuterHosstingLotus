@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { Teacher, RegistrationRequest } from '../../types';
 import { UserCog, CheckCircle, Save, User, Trash2, Award, Briefcase, RefreshCw, ShieldAlert, X, Loader2, GraduationCap, Check, UserPlus, ShieldCheck, Shield } from 'lucide-react';
 import { supabase } from '../../services/firebaseConfig';
-import { manageTeacher, approveRegistration, rejectRegistration, getSchoolPendingRegistrations } from '../../services/api';
+import { manageTeacher, approveRegistration, rejectRegistration, getSchoolPendingRegistrations, getAllTeachers, getSchools } from '../../services/api';
 
 interface TeacherManagerProps {
   schoolName: string;
@@ -20,6 +20,19 @@ const GRADES = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'M1', 'M2', 'M3', 'ALL'];
 const GRADE_LABELS: Record<string, string> = { 
     'P1': 'ป.1', 'P2': 'ป.2', 'P3': 'ป.3', 'P4': 'ป.4', 'P5': 'ป.5', 'P6': 'ป.6',
     'M1': 'ม.1', 'M2': 'ม.2', 'M3': 'ม.3', 'ALL': 'ทุกระดับชั้น' 
+};
+
+// Normalize helper for robust Thai school name matching (stripping prefixes and whitespace)
+const norm = (s: any) => {
+    if (!s) return '';
+    let str = String(s).trim().toLowerCase();
+    for (const p of ['โรงเรียน', 'รร.', 'รร ', 'รร']) {
+        if (str.startsWith(p)) {
+            str = str.substring(p.length).trim();
+            break;
+        }
+    }
+    return str.replace(/\s+/g, '');
 };
 
 const TeacherManager: React.FC<TeacherManagerProps> = ({ schoolName, currentAdminId }) => {
@@ -42,32 +55,63 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({ schoolName, currentAdmi
 
   const loadData = async () => {
     try {
-        const { data: tData } = await supabase.from('teachers').select('*').eq('school', schoolName).order('name');
-        const { data: schoolData } = await supabase.from('schools').select('*').eq('name', schoolName).single();
-        
-        if (tData) {
-            setTeachers(tData.map((t: any) => ({
-                ...t,
-                advisorClass: t.advisor_class, 
-                gradeLevel: t.grade_level,
-                teachingClasses: t.teaching_classes ? (typeof t.teaching_classes === 'string' ? JSON.parse(t.teaching_classes) : t.teaching_classes) : []
-            })));
+        const cleanSchoolName = String(schoolName || '').trim().toLowerCase();
+        const normCleanSchool = norm(cleanSchoolName);
+
+        // 1. Fetch teachers from MySQL API first, fallback to supabase
+        let teacherList: Teacher[] = [];
+        try {
+            const allT = await getAllTeachers();
+            teacherList = (allT || []).filter(t => {
+                const tSchool = String(t.school || '').trim().toLowerCase();
+                return tSchool === cleanSchoolName || norm(tSchool) === normCleanSchool;
+            });
+        } catch (e) {
+            console.error("Failed to load teachers via api:", e);
         }
 
-        // Fetch pending registrations specifically isolated to this school
+        if (teacherList.length === 0) {
+            const { data: tData } = await supabase.from('teachers').select('*').eq('school', schoolName).order('name');
+            if (tData) {
+                teacherList = tData.map((t: any) => ({
+                    ...t,
+                    advisorClass: t.advisor_class, 
+                    gradeLevel: t.grade_level,
+                    teachingClasses: t.teaching_classes ? (typeof t.teaching_classes === 'string' ? JSON.parse(t.teaching_classes) : t.teaching_classes) : []
+                }));
+            }
+        }
+        setTeachers(teacherList);
+
+        // 2. Fetch current school metadata for accurate code/id matching
+        let schoolData: any = null;
+        try {
+            const sList = await getSchools();
+            schoolData = (sList || []).find((s: any) => norm(s.name) === normCleanSchool || String(s.name || '').trim().toLowerCase() === cleanSchoolName);
+        } catch (e) {}
+
+        if (!schoolData) {
+            const { data: sData } = await supabase.from('schools').select('*').eq('name', schoolName).maybeSingle();
+            schoolData = sData;
+        }
+
+        const validSchoolId = (schoolData?.id && String(schoolData.id) !== 'NEW_SCHOOL') ? String(schoolData.id).trim() : '';
+        const validSchoolCode = (schoolData?.schoolCode || schoolData?.school_code) ? String(schoolData.schoolCode || schoolData.school_code).trim() : '';
+
+        // 3. Fetch pending registrations specifically isolated to this school
         let pendingList: RegistrationRequest[] = [];
         try {
-            pendingList = await getSchoolPendingRegistrations(schoolName, schoolData?.id);
+            pendingList = await getSchoolPendingRegistrations(schoolName, validSchoolId);
         } catch (err) {
             console.error("Failed to load school registrations via api:", err);
         }
 
         // Fallback with supabase if api returned empty but schoolData exists
-        if ((!pendingList || pendingList.length === 0) && schoolData) {
+        if ((!pendingList || pendingList.length === 0) && validSchoolId) {
             const { data: rData } = await supabase
                 .from('registration_requests')
                 .select('*')
-                .eq('school_id', schoolData.id)
+                .eq('school_id', validSchoolId)
                 .eq('status', 'pending')
                 .eq('type', 'TEACHER');
             if (rData && Array.isArray(rData)) {
@@ -82,65 +126,66 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({ schoolName, currentAdmi
             }
         }
 
-    // Normalize helper for robust school name matching (stripping prefixes and whitespace)
-    const norm = (s: any) => {
-        if (!s) return '';
-        let str = String(s).trim().toLowerCase();
-        for (const p of ['โรงเรียน', 'รร.', 'รร ', 'รร']) {
-            if (str.startsWith(p)) {
-                str = str.substring(p.length).trim();
-                break;
+        // Strict client-side isolation: MUST belong to this school, status must be pending, type must be TEACHER
+        const strictlyMySchoolRequests = (pendingList || []).filter(r => {
+            const isPending = String(r.status || '').toLowerCase() === 'pending';
+            const isTeacher = String(r.type || '').toUpperCase() === 'TEACHER';
+            if (!isPending || !isTeacher) return false;
+
+            const rawRSchoolName = String(r.schoolName || (r as any).school_name || '').trim();
+            const normRSchool = norm(rawRSchoolName);
+            const rSchoolId = String(r.schoolId || (r as any).school_id || '').trim();
+            const rSchoolCode = String(r.schoolCode || (r as any).school_code || '').trim();
+
+            // 1. Direct school name match (primary & highest priority)
+            if (normRSchool && normCleanSchool) {
+                return normRSchool === normCleanSchool || rawRSchoolName.toLowerCase() === cleanSchoolName;
             }
-        }
-        return str.replace(/\s+/g, '');
-    };
+            // 2. Check Code match if valid 8-digit code exists and matches
+            if (validSchoolCode && rSchoolCode && rSchoolCode !== 'NEW_SCHOOL') {
+                return rSchoolCode === validSchoolCode;
+            }
+            // 3. Check ID match only if neither is NEW_SCHOOL
+            if (validSchoolId && rSchoolId && rSchoolId !== 'NEW_SCHOOL') {
+                return rSchoolId === validSchoolId;
+            }
 
-    // Strict client-side isolation: MUST belong to this school, status must be pending, type must be TEACHER
-    const cleanSchoolName = String(schoolName || '').trim().toLowerCase();
-    const normCleanSchool = norm(cleanSchoolName);
-    const rawSchoolId = schoolData?.id ? String(schoolData.id).trim() : '';
-    const validSchoolId = (rawSchoolId && rawSchoolId !== 'NEW_SCHOOL') ? rawSchoolId : '';
-    const rawSchoolCode = schoolData?.school_code ? String(schoolData.school_code).trim() : '';
-    const validSchoolCode = (rawSchoolCode && rawSchoolCode !== 'NEW_SCHOOL') ? rawSchoolCode : '';
+            return false;
+        });
 
-    const strictlyMySchoolRequests = (pendingList || []).filter(r => {
-        const isPending = String(r.status || '').toLowerCase() === 'pending';
-        const isTeacher = String(r.type || '').toUpperCase() === 'TEACHER';
-        if (!isPending || !isTeacher) return false;
-
-        const rawRSchoolName = String(r.schoolName || (r as any).school_name || '').trim().toLowerCase();
-        const normRSchool = norm(rawRSchoolName);
-        const rSchoolId = String(r.schoolId || (r as any).school_id || '').trim();
-        const rSchoolCode = String(r.schoolCode || (r as any).school_code || '').trim();
-
-        // Check ID match only if neither is NEW_SCHOOL
-        const matchesId = validSchoolId && rSchoolId && rSchoolId !== 'NEW_SCHOOL' && rSchoolId === validSchoolId;
-        // Check Code match only if valid 8-digit code or specific code
-        const matchesCode = validSchoolCode && rSchoolCode && rSchoolCode !== 'NEW_SCHOOL' && rSchoolCode === validSchoolCode;
-        // Check Name match (both exact lowercase and prefix-stripped normalized)
-        const matchesName = (cleanSchoolName && rawRSchoolName && cleanSchoolName === rawRSchoolName) ||
-                            (normCleanSchool && normRSchool && normCleanSchool === normRSchool);
-
-        return Boolean(matchesName || matchesId || matchesCode);
-    });
-
-    setRequests(strictlyMySchoolRequests);
-    } catch (e) { console.error(e); }
+        setRequests(strictlyMySchoolRequests);
+    } catch (e) { 
+        console.error("loadData error:", e); 
+    }
   };
 
   const handleApproveConfirm = async () => {
       if (!selectedRequest) return;
       setIsProcessing(true);
+      const reqToApprove = selectedRequest;
       const rolesString = targetRoles.join(',');
-      const success = await approveRegistration(selectedRequest, rolesString, targetGrade, schoolName);
+      const success = await approveRegistration(reqToApprove, rolesString, targetGrade, schoolName);
       if (success) {
           alert("✅ อนุมัติคุณครูเรียบร้อยแล้ว รหัสผ่านเริ่มต้นคือ 123456");
           setSelectedRequest(null);
-          loadData();
+          // Immediately remove the approved request from current view
+          setRequests(prev => prev.filter(r => String(r.id) !== String(reqToApprove.id) && String(r.citizenId) !== String(reqToApprove.citizenId)));
+          await loadData();
       } else {
           alert("❌ เกิดข้อผิดพลาดในการอนุมัติ");
       }
       setIsProcessing(false);
+  };
+
+  const handleReject = async (req: RegistrationRequest) => {
+      if (!confirm(`คุณแน่ใจหรือไม่ว่าต้องการปฏิเสธคำขอของ ${req.name} ${req.surname}?`)) return;
+      // Immediately remove from current view
+      setRequests(prev => prev.filter(r => String(r.id) !== String(req.id) && String(r.citizenId) !== String(req.citizenId)));
+      const res = await rejectRegistration(req.id);
+      if (res) {
+          alert("ปฏิเสธคำขอเรียบร้อยแล้ว");
+      }
+      await loadData();
   };
 
   const handleUpdateRole = async () => {
@@ -161,7 +206,12 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({ schoolName, currentAdmi
   const handleDeleteTeacher = async (t: Teacher) => {
       if (String(t.id) === currentAdminId) return alert("ไม่สามารถลบตัวเองได้");
       if (!confirm(`ยืนยันการลบข้อมูลคุณครู ${t.name} ออกจากระบบถาวร?`)) return;
-      await supabase.from('teachers').delete().eq('id', t.id);
+      try {
+          await manageTeacher('delete', { id: t.id });
+      } catch (e) {}
+      try {
+          await supabase.from('teachers').delete().eq('id', t.id);
+      } catch (e) {}
       loadData();
   };
 
@@ -193,7 +243,7 @@ const TeacherManager: React.FC<TeacherManagerProps> = ({ schoolName, currentAdmi
                             </div>
                             <div className="flex gap-2">
                                 <button onClick={() => { setSelectedRequest(req); setTargetRoles(['TEACHER']); }} className="px-5 py-2.5 bg-green-600 text-white rounded-xl text-xs font-black hover:bg-green-700 shadow-md shadow-green-100 transition active:scale-95">ตรวจสอบและอนุมัติ</button>
-                                <button onClick={() => rejectRegistration(req.id).then(loadData)} className="p-2.5 bg-rose-50 text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl transition active:scale-95"><X size={20}/></button>
+                                <button onClick={() => handleReject(req)} className="p-2.5 bg-rose-50 text-rose-400 hover:bg-rose-500 hover:text-white rounded-xl transition active:scale-95"><X size={20}/></button>
                             </div>
                         </div>
                     ))}

@@ -799,25 +799,48 @@ app.post('/api', async (req, res) => {
 
         case 'approveRegistration': {
           const { req, role, grade, schoolName } = args;
-          if (req.type === 'SCHOOL') {
-            await query('INSERT IGNORE INTO schools (name, school_code, status) VALUES (?, ?, ?)', [req.schoolName, req.schoolCode, 'active']);
+          const targetSchool = req.type === 'SCHOOL' ? (req.schoolName || schoolName) : (schoolName || req.schoolName || '');
+          const targetRole = req.type === 'SCHOOL' ? 'SCHOOL_ADMIN' : (role || 'TEACHER');
+          const targetGrade = req.type === 'SCHOOL' ? 'ALL' : (grade || 'ALL');
+          const teacherName = `${req.name || ''} ${req.surname || ''}`.trim();
+          const targetPosition = req.position || 'ครูผู้สอน';
+
+          if (req.type === 'SCHOOL' && req.schoolName) {
+            await query('INSERT IGNORE INTO schools (name, school_code, status) VALUES (?, ?, ?)', [req.schoolName, req.schoolCode || '', 'active']);
+          }
+
+          // Check if teacher already exists by citizen_id or username to avoid ER_DUP_ENTRY
+          const existing = await query('SELECT id FROM teachers WHERE username = ? OR citizen_id = ? LIMIT 1', [req.citizenId, req.citizenId]);
+          if (existing && existing.length > 0) {
             await query(
-              'INSERT INTO teachers (id, username, password, name, school, citizen_id, role, status, position, grade_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-              [generateId('tea_'), req.citizenId, '123456', `${req.name} ${req.surname}`, req.schoolName, req.citizenId, 'SCHOOL_ADMIN', 'active', req.position, 'ALL']
+              'UPDATE teachers SET school = ?, role = ?, status = "active", position = ?, grade_level = ?, name = ? WHERE id = ?',
+              [targetSchool, targetRole, targetPosition, targetGrade, teacherName, existing[0].id]
             );
           } else {
             await query(
               'INSERT INTO teachers (id, username, password, name, school, citizen_id, role, status, position, grade_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-              [generateId('tea_'), req.citizenId, '123456', `${req.name} ${req.surname}`, schoolName, req.citizenId, role, 'active', req.position, grade]
+              [generateId('tea_'), req.citizenId, '123456', teacherName, targetSchool, req.citizenId, targetRole, 'active', targetPosition, targetGrade]
             );
           }
-          await query('UPDATE registration_requests SET status = "approved" WHERE id = ?', [req.id]);
+
+          // Mark registration request as approved - by ID AND citizenId to ensure it is always cleared from pending
+          if (req.id) {
+            await query('UPDATE registration_requests SET status = "approved" WHERE id = ?', [req.id]);
+          }
+          if (req.citizenId) {
+            await query('UPDATE registration_requests SET status = "approved" WHERE citizen_id = ? AND status = "pending"', [req.citizenId]);
+          }
           return res.json({ success: true });
         }
 
         case 'rejectRegistration': {
-          const { id } = args;
-          await query('UPDATE registration_requests SET status = "rejected" WHERE id = ?', [id]);
+          const { id, citizenId } = args;
+          if (id) {
+            await query('UPDATE registration_requests SET status = "rejected" WHERE id = ?', [id]);
+          }
+          if (citizenId) {
+            await query('UPDATE registration_requests SET status = "rejected" WHERE citizen_id = ? AND status = "pending"', [citizenId]);
+          }
           return res.json({ success: true });
         }
 
@@ -840,29 +863,43 @@ app.post('/api', async (req, res) => {
             }
           }
 
-          const conds: string[] = [];
-          const params: any[] = [];
+          const norm = (s: any) => {
+            if (!s) return '';
+            let str = String(s).trim().toLowerCase();
+            for (const p of ['โรงเรียน', 'รร.', 'รร ', 'รร']) {
+              if (str.startsWith(p)) {
+                str = str.substring(p.length).trim();
+                break;
+              }
+            }
+            return str.replace(/\s+/g, '');
+          };
 
-          if (cleanSchoolName) {
-            conds.push('LOWER(TRIM(school_name)) = LOWER(TRIM(?))');
-            params.push(cleanSchoolName);
-          }
-          if (targetSchoolId && targetSchoolId !== 'NEW_SCHOOL') {
-            conds.push('LOWER(TRIM(school_id)) = LOWER(TRIM(?))');
-            params.push(targetSchoolId);
-          }
-          if (schoolCode && schoolCode !== 'NEW_SCHOOL') {
-            conds.push('LOWER(TRIM(school_code)) = LOWER(TRIM(?))');
-            params.push(schoolCode);
-          }
+          const targetNorm = norm(cleanSchoolName);
+          const allPending = await query('SELECT * FROM registration_requests WHERE status = "pending" AND type = "TEACHER" ORDER BY timestamp DESC');
 
-          if (conds.length === 0) {
-            return res.json({ data: [] });
-          }
+          const filtered = (allPending || []).filter((r: any) => {
+            const rSchoolName = String(r.school_name || r.schoolName || '').trim();
+            const rNorm = norm(rSchoolName);
+            const rSchoolCode = String(r.school_code || r.schoolCode || '').trim();
+            const rSchoolId = String(r.school_id || r.schoolId || '').trim();
 
-          const sql = `SELECT * FROM registration_requests WHERE status = "pending" AND type = "TEACHER" AND (${conds.join(' OR ')}) ORDER BY timestamp DESC`;
-          const rows = await query(sql, params);
-          return res.json({ data: rows || [] });
+            // 1. Direct school name match (strict isolation: if school name is set and differs, reject)
+            if (rNorm && targetNorm) {
+              return rNorm === targetNorm || rSchoolName.toLowerCase() === cleanSchoolName.toLowerCase();
+            }
+            // 2. School Code match (if 8-digit or specific code)
+            if (schoolCode && rSchoolCode && rSchoolCode !== 'NEW_SCHOOL') {
+              return rSchoolCode === schoolCode;
+            }
+            // 3. School ID match (only if explicit and not NEW_SCHOOL)
+            if (targetSchoolId && rSchoolId && rSchoolId !== 'NEW_SCHOOL') {
+              return rSchoolId === targetSchoolId;
+            }
+            return false;
+          });
+
+          return res.json({ data: filtered });
         }
 
         case 'manageStudent': {
@@ -2124,31 +2161,52 @@ app.post('/api', async (req, res) => {
 
       case 'approveRegistration': {
         const { req, role, grade, schoolName } = args;
+        const targetSchool = req.type === 'SCHOOL' ? (req.schoolName || schoolName) : (schoolName || req.schoolName || '');
+        const targetRole = req.type === 'SCHOOL' ? 'SCHOOL_ADMIN' : (role || 'TEACHER');
+        const targetGrade = req.type === 'SCHOOL' ? 'ALL' : (grade || 'ALL');
+        const teacherName = `${req.name || ''} ${req.surname || ''}`.trim();
+        const targetPosition = req.position || 'ครูผู้สอน';
+
         if (req.type === 'SCHOOL') {
           const existsSchool = db.schools.some((s: any) => s.name === req.schoolName);
           if (!existsSchool) {
             db.schools.push({ id: db.schools.length + 1, name: req.schoolName, school_code: req.schoolCode, status: 'active', allow_all_manage_students: 0 });
           }
-          db.teachers.push({
-            id: generateId('tea_'), username: req.citizenId, password: '123456', name: `${req.name} ${req.surname}`, school: req.schoolName,
-            citizen_id: req.citizenId, role: 'SCHOOL_ADMIN', status: 'active', position: req.position, grade_level: 'ALL', login_count: 0, last_login: 0
-          });
+        }
+
+        const existingT = db.teachers.find((t: any) => String(t.username) === String(req.citizenId) || String(t.citizen_id) === String(req.citizenId));
+        if (existingT) {
+          existingT.school = targetSchool;
+          existingT.role = targetRole;
+          existingT.status = 'active';
+          existingT.position = targetPosition;
+          existingT.grade_level = targetGrade;
+          existingT.name = teacherName;
         } else {
           db.teachers.push({
-            id: generateId('tea_'), username: req.citizenId, password: '123456', name: `${req.name} ${req.surname}`, school: schoolName,
-            citizen_id: req.citizenId, role: role, status: 'active', position: req.position, grade_level: grade, login_count: 0, last_login: 0
+            id: generateId('tea_'), username: req.citizenId, password: '123456', name: teacherName, school: targetSchool,
+            citizen_id: req.citizenId, role: targetRole, status: 'active', position: targetPosition, grade_level: targetGrade, login_count: 0, last_login: 0
           });
         }
-        const r = db.registration_requests.find((x: any) => String(x.id) === String(req.id));
-        if (r) r.status = 'approved';
+
+        // Mark all matching registration requests as approved (by id or citizenId)
+        (db.registration_requests || []).forEach((r: any) => {
+          if ((req.id && String(r.id) === String(req.id)) || (req.citizenId && String(r.citizen_id || r.citizenId) === String(req.citizenId))) {
+            r.status = 'approved';
+          }
+        });
+
         saveJsonDb(db);
         return res.json({ success: true });
       }
 
       case 'rejectRegistration': {
-        const { id } = args;
-        const r = db.registration_requests.find((x: any) => String(x.id) === String(id));
-        if (r) r.status = 'rejected';
+        const { id, citizenId } = args;
+        (db.registration_requests || []).forEach((r: any) => {
+          if ((id && String(r.id) === String(id)) || (citizenId && String(r.citizen_id || r.citizenId) === String(citizenId))) {
+            r.status = 'rejected';
+          }
+        });
         saveJsonDb(db);
         return res.json({ success: true });
       }
@@ -2160,20 +2218,42 @@ app.post('/api', async (req, res) => {
 
       case 'getSchoolPendingRegistrations': {
         const { schoolName, schoolId } = args;
-        const cleanSchoolName = String(schoolName || '').trim().toLowerCase();
-        const targetSchool = (db.schools || []).find((s: any) => String(s.name || '').trim().toLowerCase() === cleanSchoolName);
+        const cleanSchoolName = String(schoolName || '').trim();
+
+        const norm = (s: any) => {
+          if (!s) return '';
+          let str = String(s).trim().toLowerCase();
+          for (const p of ['โรงเรียน', 'รร.', 'รร ', 'รร']) {
+            if (str.startsWith(p)) {
+              str = str.substring(p.length).trim();
+              break;
+            }
+          }
+          return str.replace(/\s+/g, '');
+        };
+
+        const targetNorm = norm(cleanSchoolName);
+        const targetSchool = (db.schools || []).find((s: any) => norm(s.name) === targetNorm || String(s.name || '').trim().toLowerCase() === cleanSchoolName.toLowerCase());
         const targetSchoolId = (schoolId && String(schoolId).trim() !== 'NEW_SCHOOL') ? String(schoolId).trim() : (targetSchool && String(targetSchool.id) !== 'NEW_SCHOOL' ? String(targetSchool.id) : null);
         const targetSchoolCode = (targetSchool?.school_code && String(targetSchool.school_code).trim() !== 'NEW_SCHOOL') ? String(targetSchool.school_code).trim() : null;
 
         const rows = (db.registration_requests || []).filter((r: any) => {
           if (String(r.status || '').toLowerCase() !== 'pending' || String(r.type || '').toUpperCase() !== 'TEACHER') return false;
-          const rSchoolName = String(r.school_name || r.schoolName || '').trim().toLowerCase();
+          const rSchoolName = String(r.school_name || r.schoolName || '').trim();
+          const rNorm = norm(rSchoolName);
           const rSchoolId = String(r.school_id || r.schoolId || '').trim();
           const rSchoolCode = String(r.school_code || r.schoolCode || '').trim();
 
-          if (cleanSchoolName && rSchoolName === cleanSchoolName) return true;
-          if (targetSchoolId && targetSchoolId !== 'NEW_SCHOOL' && rSchoolId === targetSchoolId) return true;
-          if (targetSchoolCode && targetSchoolCode !== 'NEW_SCHOOL' && rSchoolCode === targetSchoolCode) return true;
+          // Strict isolation: if school name is given, it must match
+          if (rNorm && targetNorm) {
+            return rNorm === targetNorm || rSchoolName.toLowerCase() === cleanSchoolName.toLowerCase();
+          }
+          if (targetSchoolCode && rSchoolCode && rSchoolCode !== 'NEW_SCHOOL') {
+            return rSchoolCode === targetSchoolCode;
+          }
+          if (targetSchoolId && rSchoolId && rSchoolId !== 'NEW_SCHOOL') {
+            return rSchoolId === targetSchoolId;
+          }
           return false;
         }).sort((a: any, b: any) => Number(b.timestamp || 0) - Number(a.timestamp || 0));
 
@@ -2692,7 +2772,9 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== "production" && !isInsideDist && !hasDist) {
     try {
-      const { createServer: createViteServer } = await import('vite');
+      const vitePkg = 'vite';
+      const viteModule: any = await import(vitePkg);
+      const createViteServer = viteModule.createServer;
       const vite = await createViteServer({
         server: { middlewareMode: true },
         appType: "spa",
