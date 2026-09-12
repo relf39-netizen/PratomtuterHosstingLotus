@@ -26,6 +26,7 @@ async function main() {
   try {
     await build({
       configFile: false,
+      base: './',
       plugins: [react()],
       build: {
         outDir: 'dist',

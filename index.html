@@ -209,21 +209,25 @@
       }
     </style>
     
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://aistudiocdn.com/react@^19.2.0",
-        "react/": "https://aistudiocdn.com/react@^19.2.0/",
-        "react-dom": "https://aistudiocdn.com/react-dom@^19.2.0",
-        "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-        "lucide-react": "https://aistudiocdn.com/lucide-react@^0.454.0",
-        "recharts": "https://aistudiocdn.com/recharts@^2.12.2",
-        "@google/genai": "https://aistudiocdn.com/@google/genai@^0.21.0",
-        "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.39.0",
-        "vite": "https://esm.sh/vite@^7.3.0",
-        "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
-      }
-    }
+    <script>
+      // Global Error Handler to eliminate silent white screens
+      window.addEventListener('error', function(event) {
+        console.error('PST Tutor Frontend Error:', event.error || event.message);
+        var root = document.getElementById('root');
+        if (root && (!root.innerHTML || root.innerHTML.trim() === '')) {
+          root.innerHTML = '<div style="font-family:\'Prompt\',sans-serif;padding:24px;max-width:540px;margin:50px auto;background:#ffffff;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,0.08);border:2px solid #fee2e2;text-align:center;">' +
+            '<div style="font-size:40px;margin-bottom:12px;">⚠️</div>' +
+            '<h2 style="color:#1e293b;font-size:20px;font-weight:700;margin:0 0 8px;">เกิดข้อผิดพลาดในการโหลดหน้าเว็บ</h2>' +
+            '<p style="color:#64748b;font-size:14px;margin:0 0 16px;">อาจมีไฟล์แคชรุ่นเก่าค้างอยู่ในเบราว์เซอร์ กรุณากดปุ่มด้านล่างเพื่อล้างแคชและเริ่มใหม่</p>' +
+            '<div style="background:#fef2f2;color:#b91c1c;padding:10px;border-radius:12px;font-size:12px;font-family:monospace;word-break:break-all;margin-bottom:20px;text-align:left;">' +
+            (event.message || 'Script execution error') +
+            '</div>' +
+            '<button onclick="localStorage.clear();sessionStorage.clear();if(\'caches\' in window){caches.keys().then(function(keys){keys.forEach(function(k){caches.delete(k);});});}window.location.reload(true);" style="background:#4f46e5;color:#ffffff;border:none;padding:12px 24px;border-radius:14px;font-weight:700;font-size:14px;cursor:pointer;width:100%;font-family:\'Prompt\',sans-serif;box-shadow:0 4px 12px rgba(79,70,229,0.3);">' +
+            '🔄 ล้างแคชและโหลดใหม่ (Clear Cache & Reload)' +
+            '</button>' +
+            '</div>';
+        }
+      });
     </script>
   </head>
   <body>
