@@ -110,31 +110,36 @@ const ProfileManager: React.FC<ProfileManagerProps> = ({ teacher, onUpdate }) =>
       const trimmedKey = manualApiKey.trim();
       if (!trimmedKey) return alert("กรุณาระบุ API Key");
       
-      // Auto-sanitize the key to fix copy-paste issues like em-dash or whitespaces
-      let cleanedKey = trimmedKey
-          .replace(/[\u2014\u2015\u2500]/g, '--') // Replace em-dash, horizontal bar with "--"
-          .replace(/[\u2013\u2212]/g, '-');      // Replace en-dash, minus with "-"
+      // Split by comma or newline to sanitize each key individually
+      const keyParts = trimmedKey.split(/[\n,;]+/).map(k => {
+          let c = k.trim()
+              .replace(/[\u2014\u2015\u2500]/g, '--')
+              .replace(/[\u2013\u2212]/g, '-')
+              .replace(/[-─—]{3,}$/, '')
+              .replace(/\s+/g, '')
+              .replace(/[^\w\.\-]/g, '');
+          return c;
+      }).filter(Boolean);
 
-      // Strip common trailing dividers like multiple hyphens/dashes (e.g. "—----------------")
-      cleanedKey = cleanedKey.replace(/[-─—]{3,}$/, '');
+      if (keyParts.length === 0) return alert("กรุณาระบุ API Key ที่ถูกต้อง");
 
-      // Remove all whitespaces and other invalid characters (keeping only letters, digits, underscores, periods, and hyphens)
-      cleanedKey = cleanedKey.replace(/\s+/g, '').replace(/[^\w\.\-]/g, '');
-
-      if (!cleanedKey.startsWith('AIza') && !cleanedKey.startsWith('AQ')) {
+      const invalidParts = keyParts.filter(k => !k.startsWith('AIza') && !k.startsWith('AQ'));
+      if (invalidParts.length > 0 && keyParts.length === 1) {
           return alert("⚠️ รูปแบบ API Key ไม่ถูกต้อง (ปกติจะขึ้นต้นด้วย AIza... หรือ AQ...) กรุณาตรวจสอบอีกครั้งครับ");
       }
 
-      localStorage.setItem('MST_CUSTOM_GEMINI_KEY', cleanedKey);
+      const finalKeyString = keyParts.join(',');
+
+      localStorage.setItem('MST_CUSTOM_GEMINI_KEY', finalKeyString);
       if (typeof process !== 'undefined' && process.env) {
-          process.env.API_KEY = cleanedKey;
+          process.env.API_KEY = finalKeyString;
       }
       if (typeof window !== 'undefined' && (window as any).process?.env) {
-          (window as any).process.env.API_KEY = cleanedKey;
+          (window as any).process.env.API_KEY = finalKeyString;
       }
-      setManualApiKey(cleanedKey);
+      setManualApiKey(finalKeyString);
       setIsKeySaved(true);
-      alert("✅ บันทึก API Key ใหม่เรียบร้อยแล้ว!\nระบบได้อัปเดตคีย์ใหม่พร้อมใช้งานสร้างข้อสอบด้วย AI ได้ทันทีครับ");
+      alert(`✅ บันทึก API Key สำเร็จ (${keyParts.length} คีย์)!\nระบบพร้อมใช้งานสร้างข้อสอบด้วย AI ทันทีครับ`);
   };
 
   const handleClearKey = () => {

@@ -12,9 +12,29 @@ export interface GeneratedQuestion {
   unit?: string;
 }
 
+const sanitizeKey = (raw: string): string => {
+  if (!raw) return '';
+  let cleaned = raw.trim()
+    .replace(/[\u2014\u2015\u2500]/g, '--')
+    .replace(/[\u2013\u2212]/g, '-')
+    .replace(/[-─—]{3,}$/, '')
+    .replace(/\s+/g, '')
+    .replace(/[^\w\.\-]/g, '');
+  return cleaned;
+};
+
+// Available Gemini models with automatic fallback
+const CANDIDATE_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+  'gemini-flash-latest'
+];
+
 /**
  * สร้างข้อสอบด้วย AI สำหรับโรงเรียนประถมและขยายโอกาส
  * เน้นอ้างอิงแนวข้อสอบจริงปี 2560 - 2567
+ * รองรับการใช้ API Key แยกของคุณครูแต่ละคน, รองรับสำรองคีย์, และระบบหมุนเวียนโมเดลอัตโนมัติเมื่อโควต้าชนขีดจำกัด
  */
 export const generateQuestionWithAI = async (
   subject: string,
@@ -25,41 +45,32 @@ export const generateQuestionWithAI = async (
   existingQuestions: string[] = []
 ): Promise<GeneratedQuestion[] | null> => {
   
-  // 🟢 อ่าน API Key จาก LocalStorage เป็นอันดับแรกก่อนเสมอ
-  // เพื่อให้แน่ใจว่าคีย์ใหม่ที่คุณครูบันทึกใหม่สดๆ จะถูกนำมาใช้งานทันที (แทนที่คีย์เดิมที่อาจหมดอายุแล้วใน memory)
+  // 🟢 อ่าน API Key จาก LocalStorage ใน Browser ของคุณครูแต่ละคน
   const storageKey = (typeof localStorage !== 'undefined' ? localStorage.getItem('MST_CUSTOM_GEMINI_KEY') : null) || '';
-  const envKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : '';
+  const envKey = (typeof process !== 'undefined' && process.env) ? (process.env.API_KEY || process.env.GEMINI_API_KEY) : '';
   
-  // 🎯 ให้ความสำคัญกับ storageKey (คีย์ที่คุณครูบันทึกในเครื่อง) ก่อน envKey
-  const rawKey = storageKey || envKey || '';
+  const rawKeyCombined = storageKey || envKey || '';
 
-  // อัปเดต process.env ให้เป็นคีย์ล่าสุดเสมอกัน
-  if (typeof process !== 'undefined' && process.env) {
-    process.env.API_KEY = rawKey;
-  }
-  if (typeof window !== 'undefined' && (window as any).process?.env) {
-    (window as any).process.env.API_KEY = rawKey;
-  }
-  
-  if (!rawKey) {
-    throw new Error("ไม่พบ API Key กรุณาตั้งค่าที่หน้า 'ข้อมูลของฉัน' (ในส่วนโปรไฟล์คุณครู) ก่อนใช้งาน AI ครับ");
+  if (!rawKeyCombined) {
+    throw new Error("ไม่พบ API Key กรุณาไปที่หน้า 'ข้อมูลของฉัน' (โปรไฟล์คุณครู) แล้วบันทึก API Key ของท่านก่อนใช้งานสร้างข้อสอบครับ");
   }
 
-  // 🧹 Auto-sanitize the API key to fix any copy-paste issues (like em-dash "—", trailing dividers, or spaces)
-  let finalKey = rawKey
-    .trim()
-    .replace(/[\u2014\u2015\u2500]/g, '--') // Replace em-dash, horizontal bar with "--"
-    .replace(/[\u2013\u2212]/g, '-');      // Replace en-dash, minus with "-"
+  // รองรับการใส่หลายคีย์คั่นด้วยเครื่องหมายจุลภาค (,) หรือขึ้นบรรทัดใหม่ เพื่อเป็นคีย์สำรอง
+  const keyCandidates = rawKeyCombined
+    .split(/[\n,;]+/)
+    .map(k => sanitizeKey(k))
+    .filter(k => k.length >= 20 && (k.startsWith('AIza') || k.startsWith('AQ')));
 
-  // Strip common trailing dividers like multiple hyphens/dashes (e.g. "—----------------")
-  finalKey = finalKey.replace(/[-─—]{3,}$/, '');
+  if (keyCandidates.length === 0) {
+    // กรณีที่คีย์ไม่เข้าเงื่อนไข prefix แต่ยังมีตัวอักษร
+    const single = sanitizeKey(rawKeyCombined);
+    if (single) keyCandidates.push(single);
+  }
 
-  // Remove all whitespaces and other invalid characters (keeping only letters, digits, underscores, periods, and hyphens)
-  finalKey = finalKey.replace(/\s+/g, '').replace(/[^\w\.\-]/g, '');
+  if (keyCandidates.length === 0) {
+    throw new Error("รูปแบบ API Key ไม่ถูกต้อง กรุณาตรวจสอบและบันทึก API Key ใหม่ในหน้าโปรไฟล์ครับ");
+  }
 
-  const ai = new GoogleGenAI({ apiKey: finalKey });
-  const modelName = 'gemini-flash-latest';
-  
   const isElementary = grade.startsWith('P');
   const levelName = isElementary ? 'ประถมศึกษา' : 'มัธยมศึกษาตอนต้น';
 
@@ -89,50 +100,85 @@ export const generateQuestionWithAI = async (
     4. correct ต้องเป็น "1", "2", "3" หรือ "4"
   `;
 
-  try {
-    const response = await ai.models.generateContent({
-      model: modelName,
-      contents: prompt,
-      config: {
-        systemInstruction: `คุณเป็นผู้เชี่ยวชาญด้านการจัดทำข้อสอบมาตรฐานระดับชาติ (NT/O-NET) ปี 2560-2567 ที่เน้นความถูกต้องและความสดใหม่ของโจทย์`,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.ARRAY, 
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              text: { type: Type.STRING },
-              c1: { type: Type.STRING },
-              c2: { type: Type.STRING },
-              c3: { type: Type.STRING },
-              c4: { type: Type.STRING },
-              correct: { type: Type.STRING },
-              explanation: { type: Type.STRING }
+  let lastError: any = null;
+
+  // วนลูปทดสอบคีย์และโมเดลสำรองเพื่อรับมือกรณี 429 Quota Exceeded ชั่วคราว
+  for (const activeKey of keyCandidates) {
+    const ai = new GoogleGenAI({ apiKey: activeKey });
+
+    for (const modelName of CANDIDATE_MODELS) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: {
+            systemInstruction: `คุณเป็นผู้เชี่ยวชาญด้านการจัดทำข้อสอบมาตรฐานระดับชาติ (NT/O-NET) ปี 2560-2567 ที่เน้นความถูกต้องและความสดใหม่ของโจทย์`,
+            responseMimeType: "application/json",
+            responseSchema: {
+              type: Type.ARRAY, 
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  text: { type: Type.STRING },
+                  c1: { type: Type.STRING },
+                  c2: { type: Type.STRING },
+                  c3: { type: Type.STRING },
+                  c4: { type: Type.STRING },
+                  correct: { type: Type.STRING },
+                  explanation: { type: Type.STRING }
+                },
+                required: ["text", "c1", "c2", "c3", "c4", "correct", "explanation"],
+              },
             },
-            required: ["text", "c1", "c2", "c3", "c4", "correct", "explanation"],
           },
-        },
-      },
-    });
+        });
 
-    if (response.text) {
-      const data = JSON.parse(response.text.trim());
-      return Array.isArray(data) ? data : [data];
-    }
-    return null;
-  } catch (error: any) {
-    console.error("AI Error:", error);
-    
-    const errorMsg = error?.message || "";
-    
-    if (errorMsg.includes('API key not found') || errorMsg.includes('403') || errorMsg.includes('invalid') || errorMsg.includes('API_KEY_INVALID') || errorMsg.includes('expired')) {
-      throw new Error("API Key ไม่ถูกต้อง หมดอายุ หรือสิทธิ์เข้าถึงถูกยกเลิก กรุณาไปที่หน้า 'ข้อมูลของฉัน' ในโปรไฟล์คุณครู เพื่อสร้าง API Key ใหม่มาบันทึกเปลี่ยนใช้งานครับ");
-    }
-    
-    if (errorMsg.includes('quota') || errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED')) {
-      throw new Error("โควต้าการใช้งาน API Key เดิมเต็มแล้ว/หมดอายุแล้ว กรุณารอสักครู่ แล้วลองใหม่ หรือสร้าง API Key ใหม่มาบันทึกสลับเปลี่ยนที่หน้าโปรไฟล์ครับ");
-    }
+        if (response.text) {
+          const data = JSON.parse(response.text.trim());
+          return Array.isArray(data) ? data : [data];
+        }
+      } catch (error: any) {
+        lastError = error;
+        const errString = String(error?.message || error || '').toLowerCase();
+        
+        // หากเป็นข้อผิดพลาดเรื่อง Quota ชั่วคราว (429 / resource_exhausted / rate limit)
+        const isQuota = errString.includes('quota') || errString.includes('429') || errString.includes('resource_exhausted');
+        const isNotFoundOrUnsupported = errString.includes('not found') || errString.includes('unsupported') || errString.includes('deprecated');
 
-    throw new Error(errorMsg || "เกิดข้อผิดพลาดในการเชื่อมต่อ AI");
+        if (isQuota || isNotFoundOrUnsupported) {
+          console.warn(`[AI Engine] Model ${modelName} hit limit or error (${errString.substring(0, 100)}...), trying next fallback model...`);
+          // รอ 1 วินาทีสั้นๆ เพื่อให้ Rate limit รีเซ็ต
+          await new Promise(res => setTimeout(res, 1000));
+          continue; // ลองโมเดลถัดไป
+        }
+
+        // หากเป็นปัญหาคีย์ไม่ถูกต้องหรือโดนยกเลิก ข้ามไปคีย์ถัดไป
+        if (errString.includes('api key not found') || errString.includes('403') || errString.includes('invalid') || errString.includes('api_key_invalid')) {
+          console.warn(`[AI Engine] Key invalid, attempting next candidate key...`);
+          break; // ข้ามไปลอง candidate key อื่น
+        }
+
+        // ข้อผิดพลาดอื่นๆ ลองโมเดลถัดไป
+        continue;
+      }
+    }
   }
+
+  // หากทดลองทุกโมเดลและทุกคีย์แล้วยังไม่สำเร็จ แสดงข้อความแจ้งเตือนที่ชัดเจน
+  const finalErrorMsg = String(lastError?.message || lastError || '');
+  if (finalErrorMsg.includes('quota') || finalErrorMsg.includes('429') || finalErrorMsg.includes('resource_exhausted')) {
+    throw new Error(
+      "ขณะนี้โควต้าของ Gemini API ชั่วคราวเต็ม (เกิน 15 ครั้ง/นาที หรือโควต้าประจำวัน)\n" +
+      "คำแนะนำ:\n" +
+      "1. กรุณารอประมาณ 30-60 วินาที แล้วกดสร้างใหม่อีกครั้ง\n" +
+      "2. ตรวจสอบว่าคุณครูสร้าง API Key จาก Google Account ของตนเองที่ aistudio.google.com (เพื่อไม่ให้แชร์โควต้าปะปนกับผู้อื่น)\n" +
+      "3. สามารถใส่ API Key สำรองคั่นด้วยเครื่องหมายจุลภาค (,) ได้ที่หน้าข้อมูลโปรไฟล์ของคุณครูครับ"
+    );
+  }
+
+  if (finalErrorMsg.includes('api key') || finalErrorMsg.includes('403') || finalErrorMsg.includes('invalid')) {
+    throw new Error("API Key ไม่ถูกต้องหรือถูกระงับสิทธิ์ กรุณาสร้าง API Key ใหม่จาก Google AI Studio แล้วบันทึกที่หน้าโปรไฟล์ครับ");
+  }
+
+  throw new Error(finalErrorMsg || "เกิดข้อผิดพลาดในการเชื่อมต่อ AI เพื่อสร้างข้อสอบ");
 };
