@@ -5,7 +5,7 @@
   "type": "commonjs",
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "node build.mjs",
+    "build": "GOMAXPROCS=1 UV_THREADPOOL_SIZE=1 node build.mjs",
     "start": "node dist/server.js",
     "lint": "tsc --noEmit",
     "preview": "vite preview"

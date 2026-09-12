@@ -1,3 +1,7 @@
+// Set thread and process limits for shared hosting / CloudLinux cPanel environments
+process.env.GOMAXPROCS = process.env.GOMAXPROCS || '1';
+process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || '1';
+
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'child_process';
@@ -26,7 +30,10 @@ async function main() {
       build: {
         outDir: 'dist',
         emptyOutDir: true, // Cleans the output directory before build
-      }
+        rollupOptions: {
+          maxParallelFileOps: 2,
+        },
+      },
     });
     console.log('✅ Vite Client Build Completed successfully.');
   } catch (error) {
