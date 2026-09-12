@@ -23,11 +23,13 @@ const sanitizeKey = (raw: string): string => {
   return cleaned;
 };
 
-// Available Gemini models with automatic fallback
+// Available active Gemini models with prioritized fallback:
+// 1. gemini-3.1-flash-lite: Ultra-fast, high concurrency, avoids 503 high-demand spikes
+// 2. gemini-3.8-flash: Flagship Gemini flash model
+// 3. gemini-flash-latest: Stable fallback alias
 const CANDIDATE_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
+  'gemini-3.1-flash-lite',
+  'gemini-3.8-flash',
   'gemini-flash-latest'
 ];
 
@@ -134,22 +136,42 @@ export const generateQuestionWithAI = async (
         });
 
         if (response.text) {
-          const data = JSON.parse(response.text.trim());
+          let cleanedText = response.text.trim();
+          if (cleanedText.startsWith('```json')) {
+            cleanedText = cleanedText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+          } else if (cleanedText.startsWith('```')) {
+            cleanedText = cleanedText.replace(/^```\s*/, '').replace(/\s*```$/, '');
+          }
+          const data = JSON.parse(cleanedText);
           return Array.isArray(data) ? data : [data];
         }
       } catch (error: any) {
         lastError = error;
         const errString = String(error?.message || error || '').toLowerCase();
         
-        // หากเป็นข้อผิดพลาดเรื่อง Quota ชั่วคราว (429 / resource_exhausted / rate limit)
-        const isQuota = errString.includes('quota') || errString.includes('429') || errString.includes('resource_exhausted');
-        const isNotFoundOrUnsupported = errString.includes('not found') || errString.includes('unsupported') || errString.includes('deprecated');
+        // 1. ตรวจสอบกรณีเซิร์ฟเวอร์ Google มีผู้ใช้งานหนาแน่นชั่วคราว (Code 503 / High Demand / Unavailable)
+        const isHighDemand = errString.includes('503') || 
+                             errString.includes('unavailable') || 
+                             errString.includes('high demand') || 
+                             errString.includes('spikes in demand') ||
+                             errString.includes('overloaded');
 
-        if (isQuota || isNotFoundOrUnsupported) {
-          console.warn(`[AI Engine] Model ${modelName} hit limit or error (${errString.substring(0, 100)}...), trying next fallback model...`);
-          // รอ 1 วินาทีสั้นๆ เพื่อให้ Rate limit รีเซ็ต
-          await new Promise(res => setTimeout(res, 1000));
-          continue; // ลองโมเดลถัดไป
+        // 2. ตรวจสอบกรณีโควต้าชนขีดจำกัดชั่วคราว (Code 429 / Rate Limit / Resource Exhausted)
+        const isQuota = errString.includes('quota') || 
+                        errString.includes('429') || 
+                        errString.includes('resource_exhausted');
+
+        // 3. ตรวจสอบกรณีโมเดลไม่พร้อมให้บริการหรือไม่รองรับ
+        const isNotFoundOrUnsupported = errString.includes('not found') || 
+                                        errString.includes('unsupported') || 
+                                        errString.includes('deprecated') || 
+                                        errString.includes('404');
+
+        if (isHighDemand || isQuota || isNotFoundOrUnsupported) {
+          console.warn(`[AI Engine] Model ${modelName} encountered temporary issue (${errString.substring(0, 80)}...). Trying next model...`);
+          // หน่วงเวลาสั้นๆ 500ms เพื่อความลื่นไหล
+          await new Promise(res => setTimeout(res, 500));
+          continue; // สลับไปลองโมเดลตัวถัดไปในลิสต์
         }
 
         // หากเป็นปัญหาคีย์ไม่ถูกต้องหรือโดนยกเลิก ข้ามไปคีย์ถัดไป
@@ -166,6 +188,14 @@ export const generateQuestionWithAI = async (
 
   // หากทดลองทุกโมเดลและทุกคีย์แล้วยังไม่สำเร็จ แสดงข้อความแจ้งเตือนที่ชัดเจน
   const finalErrorMsg = String(lastError?.message || lastError || '');
+  
+  if (finalErrorMsg.includes('503') || finalErrorMsg.includes('high demand') || finalErrorMsg.includes('unavailable')) {
+    throw new Error(
+      "ขณะนี้เซิร์ฟเวอร์ Gemini AI ของ Google มีผู้ใช้งานหนาแน่นชั่วคราว (High Demand / Code 503)\n" +
+      "คำแนะนำ: กรุณากดปุ่มสร้างข้อสอบอีกครั้งได้เลยครับ ระบบจะเชื่อมต่อใหม่อัตโนมัติ"
+    );
+  }
+
   if (finalErrorMsg.includes('quota') || finalErrorMsg.includes('429') || finalErrorMsg.includes('resource_exhausted')) {
     throw new Error(
       "ขณะนี้โควต้าของ Gemini API ชั่วคราวเต็ม (เกิน 15 ครั้ง/นาที หรือโควต้าประจำวัน)\n" +
