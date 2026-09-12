@@ -24,17 +24,11 @@ const sanitizeKey = (raw: string): string => {
 };
 
 // Available active Gemini models with prioritized fallback:
-// 1. gemini-flash-lite-latest: Official alias for modern fast flash lite model
-// 2. gemini-3.1-flash-lite: Ultra-fast, highly available, avoids 503 high-demand spikes
-// 3. gemini-3.5-flash-lite: New generation flash lite model
-// 4. gemini-3.8-flash: High-capability flash model
-// 5. gemini-flash-latest: Stable fallback alias
+// Use exclusively Flash-Lite models which have highest availability and avoid 503 High Demand spikes
 const CANDIDATE_MODELS = [
   'gemini-flash-lite-latest',
   'gemini-3.1-flash-lite',
-  'gemini-3.5-flash-lite',
-  'gemini-3.8-flash',
-  'gemini-flash-latest'
+  'gemini-3.5-flash-lite'
 ];
 
 /**
