@@ -15,10 +15,13 @@ if (savedKey) {
 
 const rootElement = document.getElementById('root');
 if (rootElement) {
-  // Service Worker Registration
+  // Service Worker Registration with Auto-Update Check
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch(err => {
+      navigator.serviceWorker.register('/sw.js').then(reg => {
+        // Check for SW updates automatically on load
+        reg.update().catch(() => {});
+      }).catch(err => {
         console.error('SW registration failed:', err);
       });
     });

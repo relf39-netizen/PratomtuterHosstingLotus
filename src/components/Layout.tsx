@@ -1,5 +1,6 @@
 import React from 'react';
 import { LogOut, Volume2, VolumeX, Sparkles, Trophy, BarChart, BookOpen } from 'lucide-react';
+import { BUILD_TIME, APP_VERSION } from '../version';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -63,6 +64,12 @@ const Layout: React.FC<LayoutProps> = ({
         </div>
       </header>
       <main className="max-w-6xl mx-auto px-4 py-6">{children}</main>
+      <footer className="max-w-6xl mx-auto px-4 py-4 text-center text-xs text-slate-400">
+        <span className="inline-flex items-center gap-1.5 bg-white/70 backdrop-blur-sm px-3 py-1 rounded-full border border-sky-100 shadow-sm text-[11px] text-slate-500 font-medium">
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+          อัปเดตระบบ: {BUILD_TIME} ({APP_VERSION})
+        </span>
+      </footer>
       {studentName && (
         <nav className="md:hidden fixed bottom-6 left-4 right-4 bg-white/90 backdrop-blur-xl border-4 border-sky-100 py-3 px-6 rounded-[30px] shadow-2xl z-40">
           <div className="flex justify-around items-center">

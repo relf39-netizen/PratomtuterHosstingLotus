@@ -19,6 +19,7 @@ import TeacherManager from './TeacherManager';
 import ProfileManager from './ProfileManager';
 import ClassroomManager from './ClassroomManager';
 import ExecutiveDashboard from './ExecutiveDashboard';
+import { BUILD_TIME, APP_VERSION } from '../../version';
 
 // Declare XLSX from CDN
 declare const XLSX: any;
@@ -367,6 +368,10 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                     <div className="flex flex-wrap items-center gap-2 mt-0.5">
                         <span className="bg-indigo-50 text-indigo-700 text-[10px] font-black px-2 py-0.5 rounded uppercase border border-indigo-100">{teacher.school}</span>
                         <span className="text-slate-500 text-sm font-medium">{teacher.name} {teacher.position && `(${teacher.position})`}</span>
+                        <span className="bg-emerald-50 text-emerald-700 text-[10px] font-bold px-2 py-0.5 rounded border border-emerald-200 flex items-center gap-1" title={`อัปเดตระบบเมื่อ: ${BUILD_TIME}`}>
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            อัปเดต: {BUILD_TIME} ({APP_VERSION})
+                        </span>
                     </div>
                 </div>
             </div>

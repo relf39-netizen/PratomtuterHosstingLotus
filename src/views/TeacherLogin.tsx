@@ -3,6 +3,7 @@ import { Teacher, School } from '../types';
 import { ArrowLeft, Lock, UserPlus, X, User, AlertCircle, Building2, Search, GraduationCap, Settings, Database, Save, LogOut, Briefcase, RefreshCw } from 'lucide-react';
 import { teacherLogin, requestRegistration, findSchoolByCode, getAppSettings } from '../services/api';
 import { saveConfig, clearConfig } from '../services/firebaseConfig';
+import { BUILD_TIME, APP_VERSION } from '../version';
 
 interface TeacherLoginProps {
   onLoginSuccess: (teacher: Teacher) => void;
@@ -360,11 +361,17 @@ const TeacherLogin: React.FC<TeacherLoginProps> = ({ onLoginSuccess, onBack, ini
           </button>
         </form>
         
-        <div className="mt-12 pt-8 border-t-4 border-slate-100 text-center">
+        <div className="mt-12 pt-8 border-t-4 border-slate-100 text-center space-y-3">
            <button onClick={() => { setShowRegister(true); resetRegForm(); }} className="text-indigo-700 font-black text-base hover:underline transition-all flex items-center justify-center gap-3 mx-auto group">
                <div className="bg-indigo-50 p-2.5 rounded-2xl group-hover:scale-110 transition-transform"><UserPlus size={22} className="text-indigo-800"/></div>
                ขอลงทะเบียนสมัครใช้งานใหม่
            </button>
+           <div className="pt-2">
+             <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-700 font-bold px-3 py-1 rounded-full border border-emerald-200 text-xs shadow-sm">
+               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+               อัปเดตระบบ: {BUILD_TIME} ({APP_VERSION})
+             </span>
+           </div>
         </div>
       </div>
     </div>

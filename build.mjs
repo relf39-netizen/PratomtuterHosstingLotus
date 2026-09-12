@@ -1,8 +1,23 @@
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
 import { execSync } from 'child_process';
+import fs from 'fs';
 
 async function main() {
+  console.log('--- Updating Build Version & Timestamp ---');
+  const now = new Date();
+  const thaiMonths = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+  const day = now.getDate();
+  const month = thaiMonths[now.getMonth()];
+  const year = now.getFullYear() + 543;
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const timestampStr = `${day} ${month} ${year} เวลา ${hours}:${minutes} น.`;
+
+  const versionContent = `// Auto-generated during build\nexport const APP_VERSION = "v1.1.2";\nexport const BUILD_TIME = "${timestampStr}";\n`;
+  fs.writeFileSync('./src/version.ts', versionContent, 'utf-8');
+  console.log(`✅ Version updated: ${timestampStr}`);
+
   console.log('--- Starting Programmatic Vite Client Build ---');
   try {
     await build({

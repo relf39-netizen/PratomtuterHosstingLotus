@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pst-tutor-v3';
+const CACHE_NAME = 'pst-tutor-v4';
 const ASSETS = [
   '/',
   '/index.html',

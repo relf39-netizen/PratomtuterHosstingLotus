@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Student } from '../types';
 import { Sparkles, Star, Heart, Loader2, User, AlertCircle, Download, UserPlus, Cloud, PartyPopper, Monitor, Smartphone, X, ShieldAlert } from 'lucide-react';
 import { verifyStudentLogin, getAppSettings } from '../services/api';
+import { BUILD_TIME, APP_VERSION } from '../version';
 
 interface LoginProps {
   student?: Student;
@@ -182,9 +183,15 @@ const Login: React.FC<LoginProps> = ({ onLogin, onTeacherLoginClick, initialLogo
                   </button>
                 </div>
 
-                <p className="text-[10px] text-slate-400 text-center font-medium mt-2">
-                    พัฒนาโดย สยาม เชียงเครือ
-                </p>
+                <div className="text-center mt-2 space-y-1">
+                    <p className="text-[10px] text-slate-400 font-medium">
+                        พัฒนาโดย สยาม เชียงเครือ
+                    </p>
+                    <p className="text-[10px] text-emerald-600 font-bold flex items-center justify-center gap-1 bg-emerald-50 py-1 px-2.5 rounded-full border border-emerald-200 w-fit mx-auto" title="เวอร์ชันปัจจุบันของเว็บแอป">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        อัปเดตล่าสุด: {BUILD_TIME} ({APP_VERSION})
+                    </p>
+                </div>
             </div>
         </div>
 

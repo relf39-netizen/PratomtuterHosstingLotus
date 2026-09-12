@@ -145,7 +145,18 @@ export const generateQuestionWithAI = async (
         }
       } catch (error: any) {
         lastError = error;
-        const errString = String(error?.message || error || '').toLowerCase();
+        let errString = '';
+        if (typeof error === 'string') {
+          errString = error.toLowerCase();
+        } else if (error?.message) {
+          errString = (error.message + ' ' + (error.status || '')).toLowerCase();
+        } else {
+          try {
+            errString = JSON.stringify(error).toLowerCase();
+          } catch {
+            errString = String(error).toLowerCase();
+          }
+        }
         
         // 1. ตรวจสอบกรณีเซิร์ฟเวอร์ Google มีผู้ใช้งานหนาแน่นชั่วคราว (Code 503 / High Demand / Unavailable)
         const isHighDemand = errString.includes('503') || 
@@ -166,8 +177,8 @@ export const generateQuestionWithAI = async (
                                         errString.includes('404');
 
         if (isHighDemand || isQuota || isNotFoundOrUnsupported) {
-          console.warn(`[AI Engine] Model ${modelName} encountered temporary issue (${errString.substring(0, 80)}...). Trying next model...`);
-          // หน่วงเวลาสั้นๆ 500ms เพื่อความลื่นไหล
+          console.warn(`[AI Engine] Model ${modelName} encountered issue: ${errString.substring(0, 100)}. Trying fallback model...`);
+          // หน่วงเวลาสั้นๆ 500ms
           await new Promise(res => setTimeout(res, 500));
           continue; // สลับไปลองโมเดลตัวถัดไปในลิสต์
         }
