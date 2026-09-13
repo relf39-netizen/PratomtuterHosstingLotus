@@ -4,12 +4,13 @@ import { createPortal } from 'react-dom';
 import { Teacher, Student, Assignment, SubjectConfig, School, ExamResult, Question, Classroom } from '../types';
 import { 
   UserPlus, BarChart2, FileText, LogOut, Calendar, UserCog, Users, ArrowLeft, Trophy, UploadCloud, RefreshCw, Trash2, X, GraduationCap, KeyRound, Sparkles, List, Copy, Eye, Loader2, Clock, LayoutGrid, TrendingUp, CheckCircle, User, Settings, Info, Download, LineChart,
-  BookOpen, Medal, ChevronRight, ShieldCheck, ToggleLeft, ToggleRight
+  BookOpen, Medal, ChevronRight, ShieldCheck, ToggleLeft, ToggleRight, Printer
 } from 'lucide-react';
 
 // ✅ Fix: Corrected paths from ../../ to ../ to resolve Vite build error
 import { getTeacherDashboard, deleteAssignment, getSubjects, addAssignment, addQuestion, getTeacherById, getQuestionsByAssignment, getClassrooms, updateSchoolSettings, getSchoolPendingRegistrations } from '../services/api';
-import { generateQuestionWithAI, GeneratedQuestion } from '../services/aiService';
+import { generateOnetExamWithAI, GeneratedQuestion } from '../services/aiService';
+import PrintableOnetExamModal, { ExamQuestionForPrint } from '../components/PrintableOnetExamModal';
 
 import StudentManager from './teacher/StudentManager';
 import SubjectManager from './teacher/SubjectManager';
@@ -57,6 +58,19 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
   const [newlyGeneratedQuestions, setNewlyGeneratedQuestions] = useState<GeneratedQuestion[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // O-NET Historical & Blueprint Generator
+  const [onetGenMode, setOnetGenMode] = useState<'blueprint' | 'topic'>('blueprint');
+  const [onetYearRange, setOnetYearRange] = useState<string>('2560-2568');
+  const [onetQuestionCount, setOnetQuestionCount] = useState<number>(10);
+  const [printableExamData, setPrintableExamData] = useState<{
+    isOpen: boolean;
+    title: string;
+    subject: string;
+    grade: string;
+    schoolName?: string;
+    questions: ExamQuestionForPrint[];
+  } | null>(null);
 
   // Modal for O-NET Detail
   const [selectedOnetForModal, setSelectedOnetForModal] = useState<Assignment | null>(null);
@@ -263,20 +277,92 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
       } catch (e) { console.error(e); } finally { setLoadingQuestions(false); }
   };
 
+  const handlePrintExistingOnet = async (a: Assignment) => {
+      setIsProcessing(true);
+      try {
+          const qData = await getQuestionsByAssignment(a.id);
+          if (!qData || qData.length === 0) {
+              alert("ไม่พบข้อสอบในชุดนี้");
+              return;
+          }
+          setPrintableExamData({
+              isOpen: true,
+              title: a.title || 'แบบทดสอบ O-NET',
+              subject: a.subject || '',
+              grade: a.grade || 'P6',
+              schoolName: teacher.school,
+              questions: qData.map(q => ({
+                  id: q.id,
+                  text: q.text,
+                  choices: q.choices,
+                  correctChoiceId: q.correctChoiceId,
+                  explanation: q.explanation,
+                  indicator: (q as any).indicator || '',
+                  yearRef: (q as any).yearRef || ''
+              }))
+          });
+      } catch (e: any) {
+          alert("ไม่สามารถเปิดโหมดพิมพ์ได้: " + e.message);
+      } finally {
+          setIsProcessing(false);
+      }
+  };
+
   const handleOnetGenerateQuestions = async () => {
       if (!hasApiKey && !localStorage.getItem('MST_CUSTOM_GEMINI_KEY')) {
           alert("กรุณาตั้งค่า API Key ส่วนตัวที่หน้าโปรไฟล์ของคุณครูก่อนครับ");
           await handleSelectApiKey();
           return;
       }
-      if (!assignSubject || !assignAiTopic) return alert("กรุณาเลือกวิชาและระบุหัวข้อเรื่อง");
+      if (!assignSubject) return alert("กรุณาเลือกวิชาที่ต้องการสร้างข้อสอบ");
+      if (onetGenMode === 'topic' && !assignAiTopic.trim()) {
+          return alert("กรุณาระบุเรื่องย่อยที่ต้องการติว หรือเปลี่ยนเป็นโหมด 'คลังข้อสอบจริง (ปี 2560-2568)'");
+      }
       
       setIsGeneratingAi(true);
       try {
-          const catStyle = (onetLevel === 'P3') ? 'nt' : 'onet';
-          const generated = await generateQuestionWithAI(assignSubject, onetLevel || 'P6', assignAiTopic, 5, catStyle as any);
-          if (generated) setNewlyGeneratedQuestions(prev => [...prev, ...generated]);
-      } catch (e: any) { alert(e.message); } finally { setIsGeneratingAi(false); }
+          const catLevel = (onetLevel === 'P3' ? 'P3' : onetLevel === 'M3' ? 'M3' : 'P6') as 'P6' | 'M3' | 'P3';
+          const existingTexts = newlyGeneratedQuestions.map(q => q.text);
+          
+          let generated: GeneratedQuestion[] | null = null;
+          
+          if (onetGenMode === 'blueprint') {
+              generated = await generateOnetExamWithAI({
+                  level: catLevel,
+                  subject: assignSubject,
+                  count: onetQuestionCount,
+                  yearRange: onetYearRange,
+                  mode: 'blueprint',
+                  existingQuestions: existingTexts
+              });
+              if (!assignTitle.trim()) {
+                  const examType = catLevel === 'P3' ? 'NT' : 'O-NET';
+                  setAssignTitle(`ติวเข้ม ${examType} ${assignSubject} (ข้อสอบจริง สทศ. ${onetYearRange})`);
+              }
+          } else {
+              generated = await generateOnetExamWithAI({
+                  level: catLevel,
+                  subject: assignSubject,
+                  count: onetQuestionCount,
+                  yearRange: onetYearRange,
+                  mode: 'custom_topic',
+                  customTopic: assignAiTopic.trim(),
+                  existingQuestions: existingTexts
+              });
+              if (!assignTitle.trim()) {
+                  const examType = catLevel === 'P3' ? 'NT' : 'O-NET';
+                  setAssignTitle(`ติวเข้ม ${examType} ${assignSubject} เรื่อง ${assignAiTopic.trim()}`);
+              }
+          }
+
+          if (generated && generated.length > 0) {
+              setNewlyGeneratedQuestions(prev => [...prev, ...generated]);
+          }
+      } catch (e: any) { 
+          alert("เกิดข้อผิดพลาดในการสร้างข้อสอบ: " + e.message); 
+      } finally { 
+          setIsGeneratingAi(false); 
+      }
   };
 
   const handleFinalizeOnet = async () => {
@@ -289,7 +375,12 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
           const isNT = onetLevel === 'P3';
           const label = isNT ? 'NT' : 'O-NET';
           const finalSubjectName = `${label} ${assignSubject}`; 
-          const finalTitle = `[${label}] ${assignTitle || `ฝึกฝน${assignSubject} เรื่อง${assignAiTopic}`}`;
+          const defaultTitle = onetGenMode === 'blueprint'
+              ? `[${label}] คลังข้อสอบจริง ${assignSubject} (${onetYearRange})`
+              : `[${label}] ฝึกฝน${assignSubject} เรื่อง${assignAiTopic || 'รวมตัวชี้วัด'}`;
+          const finalTitle = assignTitle 
+              ? (assignTitle.startsWith(`[${label}]`) ? assignTitle : `[${label}] ${assignTitle}`)
+              : defaultTitle;
           const cat = isNT ? 'NT' : 'ONET';
           
           const res = await addAssignment(teacher.school, finalSubjectName, onetLevel || 'P6', newlyGeneratedQuestions.length, assignDeadline, teacher.name, finalTitle, undefined, undefined, cat as any);
@@ -305,7 +396,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                       school: teacher.school, teacherId: tid, assignmentId: res.id
                   });
               }
-              alert(`✅ สร้างชุดข้อสอบ ${label} เรียบร้อย`);
+              alert(`✅ สร้างชุดข้อสอบ ${label} เรียบร้อย สามารถให้นักเรียนฝึกทำ หรือคลิกพิมพ์เป็นกระดาษข้อสอบ A4 ได้ทันที`);
               setNewlyGeneratedQuestions([]); setAssignTitle(''); setAssignAiTopic(''); loadData();
           }
       } catch (e: any) { alert("Error: " + e.message); } finally { setIsProcessing(false); }
@@ -525,15 +616,15 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
 
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-2xl font-black text-indigo-900 flex items-center gap-2"><Trophy className="text-yellow-500" size={28}/> ระบบเตรียมสอบ NT และ O-NET</h3>
-                            <div className="text-xs bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full border border-indigo-100 font-black uppercase tracking-widest">Blueprint 60 - 67</div>
+                            <div className="text-xs bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full border border-indigo-100 font-black uppercase tracking-widest">Blueprint สทศ. ปี 2560 - 2568</div>
                         </div>
 
-                        <div className="bg-blue-600 text-white p-5 rounded-[25px] mb-8 flex items-center gap-4 shadow-xl border-b-4 border-blue-900 relative overflow-hidden group">
+                        <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-800 text-white p-5 rounded-[25px] mb-8 flex items-center gap-4 shadow-xl border-b-4 border-indigo-950 relative overflow-hidden group">
                             <div className="absolute top-0 right-0 p-4 opacity-10 transform translate-x-4 -translate-y-4 group-hover:scale-110 transition-transform"><Sparkles size={100}/></div>
-                            <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md border border-white/20 shadow-inner"><Info size={24}/></div>
+                            <div className="bg-white/20 p-3 rounded-2xl backdrop-blur-md border border-white/20 shadow-inner flex-shrink-0"><Sparkles size={24} className="text-yellow-300"/></div>
                             <div className="text-sm md:text-base font-bold leading-relaxed relative z-10">
-                                <span className="text-yellow-300 font-black text-lg block mb-0.5">ประกาศจากระบบ AI อัจฉริยะ:</span>
-                                ระบบ AI ได้นำแนวข้อสอบจริงตั้งแต่ <span className="underline decoration-yellow-300 decoration-4 underline-offset-4">ปี 2560 ถึง 2567</span> มาวิเคราะห์และสร้างเป็นข้อสอบชุดนี้ และจะจัดเก็บไว้ใน <span className="text-yellow-300">คลังติวเข้มพิเศษ</span> โดยไม่ปนกับคลังปกติ
+                                <span className="text-yellow-300 font-black text-lg block mb-0.5">🎯 ระบบสืบค้นและสร้างข้อสอบ O-NET ย้อนหลัง (ปี 2560 - 2568):</span>
+                                คุณครูสามารถสร้างข้อสอบติวเข้มได้ทันที <span className="underline decoration-yellow-300 decoration-2 underline-offset-4">โดยไม่ต้องพิมพ์ระบุเนื้อหาเอง</span> AI จะดึงโครงสร้างข้อสอบจริง สทศ. ย้อนหลังถึงปีการศึกษา 2568 แปลงข้อความ/ตัวเลข ป้องกันโจทย์ซ้ำ และสามารถ <span className="text-yellow-300 font-black">พิมพ์เป็นแบบทดสอบกระดาษ (A4) พร้อมกระดาษคำตอบและเฉลยละเอียด</span> ได้ทันที
                             </div>
                         </div>
                         
@@ -599,29 +690,127 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                                         </div>
 
                                         <div className="space-y-5">
-                                            <div><label className="text-base font-black text-slate-400 mb-2 block uppercase tracking-widest">1. ตั้งชื่อหัวข้อทดสอบ</label><input type="text" value={assignTitle} onChange={e=>setAssignTitle(e.target.value)} placeholder="เช่น ติวเข้มสมการ" className="p-3.5 border-2 border-slate-50 rounded-2xl w-full bg-slate-50 focus:bg-white focus:border-indigo-200 outline-none transition text-base font-bold shadow-inner"/></div>
+                                            {/* โหมดการสร้างข้อสอบ */}
                                             <div>
-                                                <label className="text-base font-black text-slate-400 mb-2 block uppercase tracking-widest">2. เลือกวิชา</label>
-                                                <select value={assignSubject} onChange={e=>setAssignSubject(e.target.value)} className="p-3.5 border-2 border-slate-50 rounded-2xl w-full bg-slate-50 focus:bg-white focus:border-indigo-200 outline-none transition text-base font-bold">
-                                                    <option value="">-- เลือกวิชา --</option>
+                                                <label className="text-xs font-black text-slate-400 mb-2 block uppercase tracking-widest">โหมดการสร้างข้อสอบ AI</label>
+                                                <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOnetGenMode('blueprint')}
+                                                        className={`py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${onetGenMode === 'blueprint' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-indigo-600'}`}
+                                                    >
+                                                        <Sparkles size={14}/> คลังข้อสอบจริง (ปี 60-68)
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOnetGenMode('topic')}
+                                                        className={`py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 ${onetGenMode === 'topic' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:text-indigo-600'}`}
+                                                    >
+                                                        <FileText size={14}/> กำหนดเรื่องย่อยเอง
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="text-xs font-black text-slate-400 mb-2 block uppercase tracking-widest">1. เลือกวิชา</label>
+                                                <select value={assignSubject} onChange={e=>setAssignSubject(e.target.value)} className="p-3.5 border-2 border-slate-100 rounded-2xl w-full bg-slate-50 focus:bg-white focus:border-indigo-300 outline-none transition text-sm font-bold">
+                                                    <option value="">-- เลือกวิชาที่ต้องการติว --</option>
                                                     {(onetLevel === 'P3' ? NT_SUBJECTS : ONET_SUBJECTS).map(s=><option key={s} value={s}>{s}</option>)}
                                                 </select>
                                             </div>
-                                            <div><label className="text-base font-black text-slate-400 mb-2 block uppercase tracking-widest">3. เรื่องย่อย (Topic)</label><input type="text" value={assignAiTopic} onChange={e=>setAssignAiTopic(e.target.value)} placeholder="เช่น ระบบหายใจ, เศษส่วน" className="p-3.5 border-2 border-slate-50 rounded-2xl w-full bg-slate-50 focus:bg-white focus:border-indigo-200 outline-none transition text-base font-bold shadow-inner"/></div>
+
+                                            {onetGenMode === 'blueprint' ? (
+                                                <div className="space-y-4 bg-indigo-50/60 p-4 rounded-2xl border border-indigo-100">
+                                                    <div>
+                                                        <label className="text-xs font-black text-indigo-900 mb-1.5 block">2. ช่วงปีข้อสอบ สทศ. ที่ต้องการอ้างอิง</label>
+                                                        <select 
+                                                            value={onetYearRange} 
+                                                            onChange={e=>setOnetYearRange(e.target.value)} 
+                                                            className="p-2.5 border border-indigo-200 rounded-xl w-full bg-white text-xs font-bold text-slate-700 outline-none"
+                                                        >
+                                                            <option value="2560-2568">🌟 รวมทุกปีการศึกษา 2560 - 2568 (แนะนำ)</option>
+                                                            <option value="2567-2568">🔥 เน้นปีล่าสุด 2567 - 2568</option>
+                                                            <option value="2564-2566">📘 ปี 2564 - 2566</option>
+                                                            <option value="2560-2563">📗 ปีย้อนหลัง 2560 - 2563</option>
+                                                        </select>
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-black text-indigo-900 mb-1.5 block">3. จำนวนข้อที่ต้องการสร้าง</label>
+                                                        <div className="grid grid-cols-4 gap-1.5">
+                                                            {[5, 10, 15, 20].map(count => (
+                                                                <button
+                                                                    key={count}
+                                                                    type="button"
+                                                                    onClick={() => setOnetQuestionCount(count)}
+                                                                    className={`py-2 rounded-xl text-xs font-black transition-all ${onetQuestionCount === count ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-indigo-100 hover:bg-indigo-100/50'}`}
+                                                                >
+                                                                    {count} ข้อ
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-[11px] text-indigo-700 font-medium leading-relaxed bg-white/70 p-2.5 rounded-xl border border-indigo-100/50">
+                                                        💡 ไม่ต้องระบุเนื้อหา AI จะสืบค้นคลังข้อสอบจริงและกระจายข้อสอบตาม Test Blueprint ของ {onetLevel === 'P3' ? 'NT ป.3' : onetLevel === 'M3' ? 'O-NET ม.3' : 'O-NET ป.6'} ให้โดยอัตโนมัติ
+                                                    </p>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-4">
+                                                    <div>
+                                                        <label className="text-xs font-black text-slate-400 mb-2 block uppercase tracking-widest">2. เรื่องย่อยที่ต้องการเน้น (Topic)</label>
+                                                        <input 
+                                                            type="text" 
+                                                            value={assignAiTopic} 
+                                                            onChange={e=>setAssignAiTopic(e.target.value)} 
+                                                            placeholder="เช่น ระบบทางเดินอาหาร, สมการเชิงเส้น, Passive Voice" 
+                                                            className="p-3.5 border-2 border-slate-100 rounded-2xl w-full bg-slate-50 focus:bg-white focus:border-indigo-300 outline-none transition text-sm font-bold shadow-inner"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <label className="text-xs font-black text-slate-400 mb-1.5 block uppercase tracking-widest">จำนวนข้อ</label>
+                                                        <div className="grid grid-cols-4 gap-1.5">
+                                                            {[5, 10, 15, 20].map(count => (
+                                                                <button
+                                                                    key={count}
+                                                                    type="button"
+                                                                    onClick={() => setOnetQuestionCount(count)}
+                                                                    className={`py-2 rounded-xl text-xs font-black transition-all ${onetQuestionCount === count ? 'bg-indigo-600 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}
+                                                                >
+                                                                    {count} ข้อ
+                                                                </button>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <div>
+                                                <label className="text-xs font-black text-slate-400 mb-2 block uppercase tracking-widest">ชื่อชุดข้อสอบ (ไม่ระบุก็ได้ ระบบจะตั้งให้อัตโนมัติ)</label>
+                                                <input 
+                                                    type="text" 
+                                                    value={assignTitle} 
+                                                    onChange={e=>setAssignTitle(e.target.value)} 
+                                                    placeholder={onetGenMode === 'blueprint' ? `เช่น ติวเข้ม ${onetLevel === 'P3' ? 'NT' : 'O-NET'} ${assignSubject || ''} ปี 60-68` : "เช่น ติวเข้มสมการและอสมการ"} 
+                                                    className="p-3.5 border-2 border-slate-100 rounded-2xl w-full bg-slate-50 focus:bg-white focus:border-indigo-300 outline-none transition text-sm font-bold shadow-inner"
+                                                />
+                                            </div>
                                             
-                                            <div className="grid grid-cols-2 gap-2">
-                                                <button onClick={handleOnetGenerateQuestions} disabled={isGeneratingAi || !assignAiTopic} className="bg-indigo-600 text-white px-4 py-4 rounded-2xl font-black hover:bg-indigo-700 disabled:opacity-50 shadow-lg transition active:scale-95 flex flex-col items-center justify-center gap-1 text-xs border-b-4 border-indigo-900">
-                                                    {isGeneratingAi ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20}/>}
-                                                    {newlyGeneratedQuestions.length > 0 ? 'เพิ่มอีก 5 ข้อ' : 'AI ช่วยออกข้อสอบ'}
+                                            <div className="grid grid-cols-2 gap-2 pt-2">
+                                                <button 
+                                                    onClick={handleOnetGenerateQuestions} 
+                                                    disabled={isGeneratingAi || !assignSubject || (onetGenMode === 'topic' && !assignAiTopic.trim())} 
+                                                    className="bg-indigo-600 text-white px-4 py-4 rounded-2xl font-black hover:bg-indigo-700 disabled:opacity-50 shadow-lg transition active:scale-95 flex flex-col items-center justify-center gap-1.5 text-xs border-b-4 border-indigo-900"
+                                                >
+                                                    {isGeneratingAi ? <RefreshCw className="animate-spin" size={20}/> : <Sparkles size={20} className="text-yellow-300"/>}
+                                                    <span>{isGeneratingAi ? 'กำลังสร้างข้อสอบ...' : newlyGeneratedQuestions.length > 0 ? `เพิ่มอีก ${onetQuestionCount} ข้อ` : `✨ AI สร้างข้อสอบ (${onetQuestionCount} ข้อ)`}</span>
                                                 </button>
-                                                <button onClick={() => fileInputRef.current?.click()} className="bg-emerald-600 text-white px-4 py-4 rounded-2xl font-black hover:bg-emerald-700 shadow-lg transition active:scale-95 flex items-center justify-center gap-1 text-xs border-b-4 border-emerald-900">
-                                                    <UploadCloud size={20}/> นำเข้า Excel
+                                                <button onClick={() => fileInputRef.current?.click()} className="bg-emerald-600 text-white px-4 py-4 rounded-2xl font-black hover:bg-emerald-700 shadow-lg transition active:scale-95 flex items-center justify-center gap-1.5 text-xs border-b-4 border-emerald-900">
+                                                    <UploadCloud size={18}/> นำเข้า Excel
                                                 </button>
                                                 <input type="file" ref={fileInputRef} onChange={handleOnetExcelUpload} accept=".xlsx, .xls" className="hidden" />
                                             </div>
                                             
                                             <div className="pt-2">
-                                                <button onClick={handleDownloadOnetTemplate} className="w-full text-indigo-600 text-sm font-black py-2 hover:bg-indigo-50 rounded-xl transition uppercase tracking-widest flex items-center justify-center gap-2"><Download size={16}/> ดาวน์โหลด Template.xlsx</button>
+                                                <button onClick={handleDownloadOnetTemplate} className="w-full text-indigo-600 text-xs font-black py-2 hover:bg-indigo-50 rounded-xl transition uppercase tracking-widest flex items-center justify-center gap-2"><Download size={14}/> ดาวน์โหลด Template.xlsx</button>
                                             </div>
                                         </div>
                                     </div>
@@ -632,17 +821,53 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                                         <div className="bg-white p-6 rounded-[35px] border-2 border-green-100 shadow-xl animate-slide-up relative overflow-hidden">
                                             <div className="absolute top-0 left-0 w-full h-1 bg-green-500"></div>
                                             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-5 gap-4">
-                                                <h5 className="font-black text-green-800 flex items-center gap-2 text-lg uppercase tracking-tight"><CheckCircle size={24}/> ตรวจสอบโจทย์ ({newlyGeneratedQuestions.length} ข้อ)</h5>
+                                                <div>
+                                                    <h5 className="font-black text-green-800 flex items-center gap-2 text-lg uppercase tracking-tight">
+                                                        <CheckCircle size={24}/> ตรวจสอบโจทย์ ({newlyGeneratedQuestions.length} ข้อ)
+                                                    </h5>
+                                                    <p className="text-xs text-slate-400 font-bold mt-0.5">สามารถกดพิมพ์เป็นกระดาษข้อสอบ หรือส่งเป็นภารกิจออนไลน์ให้นักเรียนได้</p>
+                                                </div>
                                                 <div className="flex flex-wrap gap-2 items-center w-full sm:w-auto">
-                                                    <input type="date" value={assignDeadline} onChange={e=>setAssignDeadline(e.target.value)} className="border-2 border-green-100 rounded-xl p-2 text-sm flex-1 sm:flex-none font-black outline-none bg-slate-50 focus:bg-white transition"/>
-                                                    <button onClick={handleFinalizeOnet} disabled={isProcessing} className="bg-green-600 text-white px-6 py-2.5 rounded-xl font-black hover:bg-green-700 disabled:opacity-50 text-sm shadow-xl flex-1 sm:flex-none active:scale-95 transition border-b-4 border-green-800">บันทึกและส่งภารกิจ</button>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setPrintableExamData({
+                                                                isOpen: true,
+                                                                title: assignTitle || `แบบทดสอบเตรียมสอบ ${onetLevel === 'P3' ? 'NT' : 'O-NET'} ${assignSubject}`,
+                                                                subject: assignSubject,
+                                                                grade: onetLevel || 'P6',
+                                                                schoolName: teacher.school,
+                                                                questions: newlyGeneratedQuestions.map(q => ({
+                                                                    text: q.text,
+                                                                    c1: q.c1,
+                                                                    c2: q.c2,
+                                                                    c3: q.c3,
+                                                                    c4: q.c4,
+                                                                    correct: q.correct,
+                                                                    explanation: q.explanation,
+                                                                    indicator: q.indicator,
+                                                                    yearRef: q.yearRef
+                                                                }))
+                                                            });
+                                                        }}
+                                                        className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-xl font-black text-xs shadow-md flex items-center gap-1.5 active:scale-95 transition"
+                                                    >
+                                                        <Printer size={16}/> พิมพ์ข้อสอบ A4
+                                                    </button>
+                                                    <input type="date" value={assignDeadline} onChange={e=>setAssignDeadline(e.target.value)} className="border-2 border-green-100 rounded-xl p-2 text-xs flex-1 sm:flex-none font-black outline-none bg-slate-50 focus:bg-white transition"/>
+                                                    <button onClick={handleFinalizeOnet} disabled={isProcessing} className="bg-green-600 text-white px-5 py-2.5 rounded-xl font-black hover:bg-green-700 disabled:opacity-50 text-xs shadow-xl flex-1 sm:flex-none active:scale-95 transition border-b-4 border-green-800">บันทึกและส่งภารกิจ</button>
                                                 </div>
                                             </div>
                                             <div className="max-h-[450px] overflow-y-auto space-y-4 bg-slate-50/50 p-4 rounded-[25px] border border-slate-100 custom-scrollbar shadow-inner">
                                                 {newlyGeneratedQuestions.map((q,i)=>(
                                                     <div key={i} className="text-base bg-white p-5 rounded-2xl border border-green-100 shadow-sm relative group hover:border-indigo-200 transition-all">
                                                         <button onClick={() => setNewlyGeneratedQuestions(prev => prev.filter((_, idx) => idx !== i))} className="absolute top-4 right-4 p-1.5 text-slate-200 hover:text-red-500 transition opacity-0 group-hover:opacity-100"><Trash2 size={16}/></button>
-                                                        <div className="font-black text-slate-800 mb-3 leading-relaxed pr-8">{i+1}. {q.text}</div>
+                                                        <div className="flex flex-wrap items-center gap-2 mb-2">
+                                                            <span className="text-xs bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-black">ข้อที่ {i+1}</span>
+                                                            {q.yearRef && <span className="text-[11px] bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md font-bold">🏛️ {q.yearRef}</span>}
+                                                            {q.indicator && <span className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-md font-bold">{q.indicator}</span>}
+                                                        </div>
+                                                        <div className="font-black text-slate-800 mb-3 leading-relaxed pr-8">{q.text}</div>
                                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3 text-sm text-slate-500 font-bold pl-4 border-l-2 border-slate-100">
                                                             <div className={q.correct === '1' ? 'text-green-600 font-black' : ''}>1. {q.c1}</div>
                                                             <div className={q.correct === '2' ? 'text-green-600 font-black' : ''}>2. {q.c2}</div>
@@ -673,6 +898,7 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                                                             </div>
                                                         </div>
                                                         <div className="flex items-center gap-2 flex-shrink-0">
+                                                            <button onClick={() => handlePrintExistingOnet(a)} className="bg-emerald-50 text-emerald-600 p-2.5 rounded-xl hover:bg-emerald-600 hover:text-white transition shadow-sm" title="พิมพ์แบบทดสอบกระดาษ (A4)"><Printer size={20}/></button>
                                                             <button onClick={() => handleOnetDuplicate(a)} className="bg-green-50 text-green-600 p-2.5 rounded-xl hover:bg-green-600 hover:text-white transition shadow-sm" title="ทำซ้ำโจทย์ชุดเดิม"><Copy size={20}/></button>
                                                             <button onClick={() => handleOpenOnetStats(a)} className="bg-indigo-50 text-indigo-600 p-2.5 rounded-xl hover:bg-indigo-600 hover:text-white transition shadow-sm" title="ดูสถิติคะแนน"><Eye size={20}/></button>
                                                             <button onClick={() => handleDeleteAssignmentItem(a.id)} className="bg-red-50 text-red-500 p-2.5 rounded-xl hover:bg-red-500 hover:text-white transition shadow-sm"><Trash2 size={20}/></button>
@@ -702,7 +928,33 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                                 เตรียมสอบ • {selectedOnetForModal.subject} • ชั้น {GRADE_LABELS[selectedOnetForModal.grade || ''] || selectedOnetForModal.grade}
                             </p>
                         </div>
-                        <button onClick={() => setSelectedOnetForModal(null)} className="text-slate-400 hover:text-red-500 transition p-2 rounded-full"><X size={28}/></button>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => {
+                                    setPrintableExamData({
+                                        isOpen: true,
+                                        title: selectedOnetForModal.title || 'แบบทดสอบ O-NET',
+                                        subject: selectedOnetForModal.subject || '',
+                                        grade: selectedOnetForModal.grade || 'P6',
+                                        schoolName: teacher.school,
+                                        questions: examQuestions.map(q => ({
+                                            id: q.id,
+                                            text: q.text,
+                                            choices: q.choices,
+                                            correctChoiceId: q.correctChoiceId,
+                                            explanation: q.explanation,
+                                            indicator: (q as any).indicator || '',
+                                            yearRef: (q as any).yearRef || ''
+                                        }))
+                                    });
+                                }}
+                                disabled={examQuestions.length === 0}
+                                className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white px-4 py-2 rounded-xl text-xs font-black flex items-center gap-2 shadow-sm transition active:scale-95"
+                            >
+                                <Printer size={16}/> พิมพ์ข้อสอบ A4
+                            </button>
+                            <button onClick={() => setSelectedOnetForModal(null)} className="text-slate-400 hover:text-red-500 transition p-2 rounded-full"><X size={28}/></button>
+                        </div>
                     </div>
 
                     <div className="flex bg-slate-100 p-1 mx-8 mt-4 rounded-2xl w-fit shadow-inner">
@@ -803,6 +1055,19 @@ const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher: initialTea
                     </div>
                 </div>
             </div>, document.body
+        )}
+
+        {/* Printable Exam Modal */}
+        {printableExamData && printableExamData.isOpen && (
+            <PrintableOnetExamModal
+                isOpen={printableExamData.isOpen}
+                onClose={() => setPrintableExamData(null)}
+                title={printableExamData.title}
+                subject={printableExamData.subject}
+                grade={printableExamData.grade}
+                schoolName={printableExamData.schoolName || teacher.school}
+                questions={printableExamData.questions}
+            />
         )}
     </div>
   );
