@@ -29,13 +29,19 @@ DirectoryIndex dist/index.html index.html
   RewriteEngine On
   RewriteBase /
 
-  # Allow all API requests to pass through to Passenger / Node.js
-  RewriteCond %{REQUEST_URI} ^/api [NC]
+  # Allow all /api and /api/* requests to pass through directly to Passenger / Node.js
+  RewriteCond %{REQUEST_URI} ^/api(/.*)?$ [NC]
   RewriteRule .* - [L]
 
-  # Block direct access to raw TypeScript and sensitive configuration files
+  # Block direct access to raw TypeScript, source code, and sensitive files (allow manifest.json)
   RewriteRule ^src/ - [F,L]
-  RewriteRule \.(ts|tsx|env|json|mjs|config\.ts)$ - [F,L]
+  RewriteRule ^(package|package-lock|tsconfig|build)\.json$ - [F,L]
+  RewriteRule \.(ts|tsx|env|mjs|config\.ts)$ - [F,L]
+
+  # Allow public files like manifest.json and logo.svg
+  RewriteRule ^manifest\.json$ dist/manifest.json [L]
+  RewriteRule ^logo\.svg$ dist/logo.svg [L]
+  RewriteRule ^sw\.js$ dist/sw.js [L]
 
   # 1. If requesting domain root '/' or 'index.html', serve dist/index.html directly
   RewriteRule ^$ dist/index.html [L]
@@ -51,7 +57,7 @@ DirectoryIndex dist/index.html index.html
 
   # 4. SPA Fallback: Route all non-file, non-API requests to dist/index.html
   RewriteCond %{REQUEST_URI} !^/dist/
-  RewriteCond %{REQUEST_URI} !^/api/
+  RewriteCond %{REQUEST_URI} !^/api(/.*)?$
   RewriteCond %{REQUEST_FILENAME} !-f
   RewriteCond %{REQUEST_FILENAME} !-d
   RewriteRule ^.*$ dist/index.html [L]

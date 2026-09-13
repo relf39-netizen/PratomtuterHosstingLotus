@@ -265,6 +265,14 @@ async function ensureSuperAdminsExist() {
 // ---------------------------------------------------------------------------
 // 🚪 Consolidated Unified Action Endpoint for React Application
 // ---------------------------------------------------------------------------
+app.get('/api', (req, res) => {
+  res.json({ status: 'ok', message: 'Pratom Smart Tutor API is running' });
+});
+
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', serverTime: new Date().toISOString() });
+});
+
 app.post('/api', async (req, res) => {
   const { action, ...args } = req.body;
   if (!action) {
