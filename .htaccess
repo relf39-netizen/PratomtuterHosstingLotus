@@ -37,16 +37,19 @@ DirectoryIndex dist/index.html index.html
   RewriteRule ^src/ - [F,L]
   RewriteRule \.(ts|tsx|env|json|mjs|config\.ts)$ - [F,L]
 
-  # If requesting domain root '/', serve dist/index.html directly
+  # 1. If requesting domain root '/' or 'index.html', serve dist/index.html directly
   RewriteRule ^$ dist/index.html [L]
+  RewriteRule ^index\.html$ dist/index.html [L]
 
-  # If the requested file or directory exists inside dist/, serve from dist/
+  # 2. If the requested file exists inside dist/, serve it directly from dist/
   RewriteCond %{REQUEST_URI} !^/dist/
-  RewriteCond %{DOCUMENT_ROOT}/dist%{REQUEST_URI} -f [OR]
-  RewriteCond %{DOCUMENT_ROOT}/dist%{REQUEST_URI} -d
+  RewriteCond dist/$1 -f
   RewriteRule ^(.*)$ dist/$1 [L]
 
-  # SPA Fallback: Route all non-file, non-API requests to dist/index.html
+  # 3. Explicitly map /assets/* to dist/assets/*
+  RewriteRule ^assets/(.*)$ dist/assets/$1 [L]
+
+  # 4. SPA Fallback: Route all non-file, non-API requests to dist/index.html
   RewriteCond %{REQUEST_URI} !^/dist/
   RewriteCond %{REQUEST_URI} !^/api/
   RewriteCond %{REQUEST_FILENAME} !-f
