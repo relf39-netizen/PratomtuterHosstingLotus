@@ -4,7 +4,7 @@ process.env.UV_THREADPOOL_SIZE = process.env.UV_THREADPOOL_SIZE || '1';
 
 import { build } from 'vite';
 import react from '@vitejs/plugin-react';
-import { execSync } from 'child_process';
+import * as esbuild from 'esbuild';
 import fs from 'fs';
 
 async function main() {
@@ -46,10 +46,17 @@ async function main() {
     process.exit(1);
   }
 
-  console.log('--- Starting Server Compilation (CommonJS) ---');
+  console.log('--- Starting Server Compilation (CommonJS with esbuild) ---');
   try {
-    // Compile server.ts to CommonJS so that iisnode/IIS can require it without ERR_REQUIRE_ESM
-    execSync('npx tsc server.ts --target ES2022 --module CommonJS --moduleResolution node --outDir dist --noEmit false --esModuleInterop true --skipLibCheck true', { stdio: 'inherit' });
+    // Compile server.ts to CommonJS using programmatic esbuild (low memory, 0 spawned processes to prevent EAGAIN)
+    await esbuild.build({
+      entryPoints: ['server.ts'],
+      bundle: false,
+      platform: 'node',
+      format: 'cjs',
+      target: 'node18',
+      outfile: 'dist/server.js',
+    });
     console.log('✅ Server Compilation Completed successfully.');
   } catch (error) {
     console.error('❌ Server Compilation Failed:', error);
