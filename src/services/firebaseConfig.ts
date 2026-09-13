@@ -77,7 +77,7 @@ export const supabase = {
                 filters.push({ field, value });
                 return builder;
             },
-            order: (col: string) => {
+            order: (col: string, _opts?: any) => {
                 orderCol = col;
                 return builder;
             },
