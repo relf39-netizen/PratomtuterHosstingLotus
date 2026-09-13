@@ -43,7 +43,7 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'EXAM' | 'ANSWER_SHEET' | 'KEY' | 'ALL'>('EXAM');
   const [customSchool, setCustomSchool] = useState(schoolName || 'โรงเรียนประถมศึกษา');
-  const [customTitle, setCustomTitle] = useState(title || `แบบทดสอบเตรียมความพร้อม O-NET ${subject}`);
+  const [customTitle, setCustomTitle] = useState(title || `แบบทดสอบเตรียมความพร้อม ${subject}`);
   const [academicYear, setAcademicYear] = useState('2568');
   const [timeAllowed, setTimeAllowed] = useState('60 นาที');
   const [choiceFormat, setChoiceFormat] = useState<'THAI' | 'NUMBER'>('THAI'); // ก,ข,ค,ง หรือ 1,2,3,4
@@ -51,6 +51,7 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
   const [fontSize, setFontSize] = useState<'small' | 'normal' | 'large'>('normal');
   const [showIndicators, setShowIndicators] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
 
   if (!isOpen) return null;
 
@@ -82,20 +83,164 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
 
   const gradeDisplay = grade === 'P6' ? 'ประถมศึกษาปีที่ 6' : 
                        grade === 'M3' ? 'มัธยมศึกษาปีที่ 3' : 
-                       grade === 'P3' ? 'ประถมศึกษาปีที่ 3 (NT)' : grade;
+                       grade === 'P3' ? 'ประถมศึกษาปีที่ 3' : grade;
 
+  const fontSizePt = fontSize === 'small' ? '10pt' : fontSize === 'large' ? '12.5pt' : '11pt';
+
+  // Build clean standalone HTML for printing (no overflow, no modals, no scrollbars)
+  const buildStandalonePrintHtml = (contentHtml: string, pageTitle: string) => {
+    return `<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <title>${pageTitle}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;500;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 14mm 12mm 14mm 12mm;
+    }
+    * {
+      box-sizing: border-box !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+      scrollbar-width: none !important;
+      -ms-overflow-style: none !important;
+    }
+    ::-webkit-scrollbar {
+      display: none !important;
+      width: 0 !important;
+      height: 0 !important;
+    }
+    html, body {
+      margin: 0 !important;
+      padding: 0 !important;
+      background: #ffffff !important;
+      color: #0f172a !important;
+      font-family: 'Sarabun', 'Prompt', sans-serif !important;
+      font-size: ${fontSizePt} !important;
+      line-height: 1.5 !important;
+      height: auto !important;
+      min-height: 0 !important;
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    .no-print {
+      display: none !important;
+    }
+    .question-item {
+      page-break-inside: avoid !important;
+      break-inside: avoid !important;
+      break-inside: avoid-page !important;
+      display: block !important;
+      margin-bottom: 14pt !important;
+    }
+    .page-break-before {
+      page-break-before: always !important;
+      break-before: page !important;
+    }
+    .print-cols-2 {
+      column-count: 2 !important;
+      column-gap: 22pt !important;
+      column-fill: auto !important;
+    }
+    .print-cols-1 {
+      display: block !important;
+    }
+  </style>
+</head>
+<body class="p-6 md:p-10">
+  <div class="printable-sheet ${fontSize === 'small' ? 'print-text-small' : fontSize === 'large' ? 'print-text-large' : 'print-text-normal'}">
+    ${contentHtml}
+  </div>
+</body>
+</html>`;
+  };
+
+  // Primary Print Function: Uses dedicated hidden iframe for pristine multi-page A4 rendering
   const handlePrint = () => {
+    const printContent = document.getElementById('printable-sheet-content');
+    if (!printContent) return;
+
+    setIsPrinting(true);
     const originalTitle = document.title;
     const tabName = activeTab === 'EXAM' ? 'แบบทดสอบ' :
                     activeTab === 'ANSWER_SHEET' ? 'กระดาษคำตอบ' :
-                    activeTab === 'KEY' ? 'เฉลย' : 'ข้อสอบและเฉลยครบชุด';
-    const examFileName = `${customSchool || 'โรงเรียน'}_${customTitle || 'ONET'}_${tabName}_${subject}_ชั้น${gradeDisplay}`;
-    document.title = examFileName.replace(/[\/\\:*?"<>|]/g, '_');
+                    activeTab === 'KEY' ? 'เฉลยละเอียด' : 'ข้อสอบและเฉลยครบชุด';
+    const examFileName = `${customSchool || 'โรงเรียน'}_${customTitle || 'ข้อสอบ'}_${tabName}_${subject}_ชั้น${gradeDisplay}`;
+    const cleanFileName = examFileName.replace(/[\/\\:*?"<>|]/g, '_');
+    document.title = cleanFileName;
+
+    const fullHtml = buildStandalonePrintHtml(printContent.innerHTML, cleanFileName);
+
+    // Method 1: Dedicated Hidden iframe - isolated from modal and parent DOM scroll containers
+    try {
+      let iframe = document.getElementById('pst-print-hidden-iframe') as HTMLIFrameElement;
+      if (iframe) {
+        iframe.remove();
+      }
+      iframe = document.createElement('iframe');
+      iframe.id = 'pst-print-hidden-iframe';
+      iframe.style.position = 'fixed';
+      iframe.style.top = '-10000px';
+      iframe.style.left = '-10000px';
+      iframe.style.width = '1000px';
+      iframe.style.height = '1000px';
+      iframe.style.border = 'none';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      document.body.appendChild(iframe);
+
+      const frameDoc = iframe.contentDocument || iframe.contentWindow?.document;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(fullHtml);
+        frameDoc.close();
+
+        setTimeout(() => {
+          try {
+            iframe.contentWindow?.focus();
+            iframe.contentWindow?.print();
+          } catch (err) {
+            console.warn('Iframe print error, falling back to direct print mount', err);
+            runDirectPrintMount(printContent.innerHTML);
+          } finally {
+            setTimeout(() => {
+              document.title = originalTitle;
+              setIsPrinting(false);
+              iframe.remove();
+            }, 3000);
+          }
+        }, 500);
+        return;
+      }
+    } catch (e) {
+      console.warn('Failed to initialize hidden print iframe, falling back', e);
+    }
+
+    // Method 2: Direct print mount fallback
+    runDirectPrintMount(printContent.innerHTML);
+    setTimeout(() => {
+      document.title = originalTitle;
+      setIsPrinting(false);
+    }, 1500);
+  };
+
+  // Fallback direct mount to document.body: hides everything else during window.print()
+  const runDirectPrintMount = (contentHtml: string) => {
+    let mount = document.getElementById('pst-print-mount-point') as HTMLDivElement;
+    if (!mount) {
+      mount = document.createElement('div');
+      mount.id = 'pst-print-mount-point';
+      document.body.appendChild(mount);
+    }
+    mount.innerHTML = `<div class="${fontSize === 'small' ? 'print-text-small' : fontSize === 'large' ? 'print-text-large' : 'print-text-normal'}">${contentHtml}</div>`;
 
     window.print();
 
     setTimeout(() => {
-      document.title = originalTitle;
+      mount.remove();
     }, 1500);
   };
 
@@ -107,6 +252,11 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
       return;
     }
 
+    const tabName = activeTab === 'EXAM' ? 'แบบทดสอบ' :
+                    activeTab === 'ANSWER_SHEET' ? 'กระดาษคำตอบ' :
+                    activeTab === 'KEY' ? 'เฉลยละเอียด' : 'ข้อสอบและเฉลยครบชุด';
+    const cleanFileName = `${customSchool}_${customTitle}_${tabName}_ชั้น${gradeDisplay}`.replace(/[\/\\:*?"<>|]/g, '_');
+
     const printWin = window.open('', '_blank', 'width=950,height=900');
     if (!printWin) {
       // If popup is blocked by browser, fallback to standard print
@@ -114,71 +264,14 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
       return;
     }
 
-    const tabName = activeTab === 'EXAM' ? 'แบบทดสอบ' :
-                    activeTab === 'ANSWER_SHEET' ? 'กระดาษคำตอบ' :
-                    activeTab === 'KEY' ? 'เฉลยละเอียด' : 'ข้อสอบและเฉลยครบชุด';
-
-    const htmlContent = `
-      <!DOCTYPE html>
-      <html lang="th">
-      <head>
-        <meta charset="UTF-8">
-        <title>${customSchool}_${customTitle}_${tabName}_ชั้น${gradeDisplay}</title>
-        <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@400;600;700&family=Sarabun:wght@400;500;600;700&display=swap" rel="stylesheet">
-        <script src="https://cdn.tailwindcss.com"></script>
-        <style>
-          @page {
-            size: A4 portrait;
-            margin: 14mm 12mm 14mm 12mm;
-          }
-          * {
-            box-sizing: border-box;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-            scrollbar-width: none !important;
-          }
-          ::-webkit-scrollbar {
-            display: none !important;
-          }
-          html, body {
-            margin: 0;
-            padding: 0;
-            background: #ffffff;
-            color: #0f172a;
-            font-family: 'Sarabun', 'Prompt', sans-serif;
-            font-size: ${fontSize === 'small' ? '10pt' : fontSize === 'large' ? '12.5pt' : '11pt'};
-            line-height: 1.45;
-          }
-          .question-item {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            margin-bottom: 14pt;
-          }
-          .page-break-before {
-            page-break-before: always !important;
-            break-before: page !important;
-          }
-          .print-cols-2 {
-            column-count: 2 !important;
-            column-gap: 22pt !important;
-            column-fill: auto !important;
-          }
-          .print-cols-1 {
-            display: block !important;
-          }
-        </style>
-      </head>
-      <body class="p-6 md:p-10">
-        ${printContent.innerHTML}
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 400);
-          };
-        <\/script>
-      </body>
-      </html>
+    const htmlContent = buildStandalonePrintHtml(printContent.innerHTML, cleanFileName) + `
+      <script>
+        window.onload = function() {
+          setTimeout(function() {
+            window.print();
+          }, 400);
+        };
+      <\/script>
     `;
 
     printWin.document.open();
@@ -246,7 +339,7 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
         </div>
       </div>
 
-      {/* Questions List with true print column support */}
+      {/* Questions List with true print column and page-break support */}
       <div className={`exam-questions-container ${
         columns === '2' 
           ? 'print-cols-2 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6' 
@@ -373,7 +466,7 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
       <div className="border-b-2 border-slate-800 pb-4 mb-6">
         <h2 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-2">
           <Key size={24} className="text-emerald-600" />
-          เฉลยละเอียดและคำอธิบายข้อสอบติว O-NET / NT (สำหรับคุณครู)
+          เฉลยละเอียดและคำอธิบายข้อสอบ (สำหรับคุณครู)
         </h2>
         <p className="text-sm font-bold text-slate-700 mt-1">
           {customTitle} • ระดับชั้น {gradeDisplay} • วิชา {subject}
@@ -448,26 +541,42 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
     <div className="printable-modal-root fixed inset-0 z-[120] bg-slate-900/80 backdrop-blur-sm flex flex-col font-prompt animate-fade-in">
       {/* 
         CRITICAL PRINT STYLESHEET:
-        Completely resets viewport, scrolls, heights, and positions so the browser 
-        paginates naturally into multiple A4 pages without clipping or scrollbars.
+        When window.print() is executed:
+        1. Hides all other elements on the body
+        2. Unconstrains html, body, and print mount point so the browser naturally paginates into multiple A4 pages
+        3. Completely removes scrollbars from print preview
       */}
       <style>{`
         @media print {
-          /* 1. Hide unwanted elements outside and inside */
-          #root,
-          .no-print,
-          nav,
-          header,
-          aside {
+          /* 1. Hide everything on the page except the standalone print mount */
+          body > *:not(#pst-print-mount-point) {
             display: none !important;
           }
 
-          /* 2. Completely reset html & body */
+          /* 2. Standalone mount is the only printed content */
+          #pst-print-mount-point {
+            display: block !important;
+            position: static !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #ffffff !important;
+            color: #0f172a !important;
+            font-family: 'Sarabun', 'Prompt', sans-serif !important;
+            font-size: ${fontSizePt} !important;
+            line-height: 1.5 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            overflow: visible !important;
+          }
+
+          /* 3. Global resets */
           html, body {
             margin: 0 !important;
             padding: 0 !important;
             background: #ffffff !important;
-            color: #000000 !important;
+            color: #0f172a !important;
             width: 100% !important;
             height: auto !important;
             min-height: 0 !important;
@@ -478,7 +587,7 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
             print-color-adjust: exact !important;
           }
 
-          /* 3. Hide all scrollbars in print output */
+          /* 4. Disable all scrollbars in print output */
           * {
             -ms-overflow-style: none !important;
             scrollbar-width: none !important;
@@ -489,75 +598,28 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
             height: 0 !important;
           }
 
-          /* 4. Completely unfix and unconstrain the modal root */
-          .printable-modal-root {
-            position: static !important;
-            display: block !important;
-            width: 100% !important;
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-            overflow: visible !important;
-            inset: auto !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            background: transparent !important;
-            backdrop-filter: none !important;
-            z-index: auto !important;
-            animation: none !important;
-            transform: none !important;
+          /* 5. A4 Page Settings */
+          @page {
+            size: A4 portrait;
+            margin: 14mm 12mm 14mm 12mm;
           }
 
-          /* 5. Unconstrain inner layout */
-          .printable-main-layout {
+          /* 6. Questions prevent break inside */
+          .question-item {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+            break-inside: avoid-page !important;
             display: block !important;
-            width: 100% !important;
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-            overflow: visible !important;
-            padding: 0 !important;
-            margin: 0 !important;
+            margin-bottom: 14pt !important;
           }
 
-          /* 6. Unconstrain the preview wrapper and remove any scrollbars */
-          .printable-exam-wrapper {
-            position: static !important;
-            display: block !important;
-            width: 100% !important;
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-            overflow: visible !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            background: transparent !important;
+          /* 7. Page break between major sections */
+          .page-break-before {
+            page-break-before: always !important;
+            break-before: page !important;
           }
 
-          /* 7. Sheet reset for A4 print output */
-          .printable-sheet {
-            position: static !important;
-            display: block !important;
-            width: 100% !important;
-            max-width: 100% !important;
-            height: auto !important;
-            min-height: 0 !important;
-            max-height: none !important;
-            overflow: visible !important;
-            padding: 0 !important;
-            margin: 0 !important;
-            box-shadow: none !important;
-            border: none !important;
-            border-radius: 0 !important;
-            background: #ffffff !important;
-            color: #000000 !important;
-          }
-
-          /* 8. Column Layout: CSS columns paginates smoothly across pages whereas CSS grid does not */
-          .print-cols-1 {
-            display: block !important;
-            width: 100% !important;
-          }
+          /* 8. Column layout */
           .print-cols-2 {
             display: block !important;
             column-count: 2 !important;
@@ -565,39 +627,22 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
             column-fill: auto !important;
             width: 100% !important;
           }
-
-          /* 9. Prevent question cards from breaking in half across page or column cuts */
-          .question-item {
-            page-break-inside: avoid !important;
-            break-inside: avoid !important;
-            margin-bottom: 14pt !important;
+          .print-cols-1 {
             display: block !important;
+            width: 100% !important;
           }
 
-          /* 10. Page break between sections when printing full packet */
-          .page-break-before {
-            page-break-before: always !important;
-            break-before: page !important;
-          }
-
-          /* 11. Typography scaling for print */
           .print-text-small {
             font-size: 10pt !important;
             line-height: 1.35 !important;
           }
           .print-text-normal {
-            font-size: 11.5pt !important;
+            font-size: 11pt !important;
             line-height: 1.45 !important;
           }
           .print-text-large {
-            font-size: 13pt !important;
+            font-size: 12.5pt !important;
             line-height: 1.55 !important;
-          }
-
-          /* 12. Standard A4 Page Setup */
-          @page {
-            size: A4 portrait;
-            margin: 14mm 12mm 14mm 12mm;
           }
         }
       `}</style>
@@ -610,10 +655,10 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
           </div>
           <div>
             <h3 className="text-base md:text-lg font-black leading-tight flex items-center gap-2">
-              พิมพ์แบบทดสอบข้อสอบติว O-NET / NT บนกระดาษ A4
+              พิมพ์แบบทดสอบระดับชาติ (RT / NT / O-NET) บนกระดาษ A4
             </h3>
             <p className="text-xs text-slate-400 font-medium">
-              จัดหน้าพิมพ์อัตโนมัติหลายหน้า A4 ไม่มีแถบเลื่อนคั่น รองรับบันทึกเป็น PDF ทุกหน้าครบถ้วน
+              จัดหน้า A4 อัตโนมัติหลายหน้าสมบูรณ์ ไร้แถบเลื่อนคั่น รองรับพิมพ์หรือบันทึกเป็น PDF ครบทุกหน้า
             </p>
           </div>
         </div>
@@ -659,7 +704,7 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
             }`}
             title="พิมพ์ครบทุกส่วนในชุดเดียว"
           >
-            <Layers size={14} /> 4. พิมพ์ครบทุกชุด (All-in-One)
+            <Layers size={14} /> 4. พิมพ์ครบชุด (All-in-One)
           </button>
         </div>
 
@@ -684,9 +729,10 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
 
           <button
             onClick={handlePrint}
-            className="bg-emerald-600 hover:bg-emerald-500 text-white px-5 py-2 rounded-xl text-xs md:text-sm font-black transition flex items-center gap-2 shadow-lg shadow-emerald-600/30 active:scale-95"
+            disabled={isPrinting}
+            className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white px-5 py-2 rounded-xl text-xs md:text-sm font-black transition flex items-center gap-2 shadow-lg shadow-emerald-600/30 active:scale-95"
           >
-            <Printer size={16} /> สั่งพิมพ์ A4 / PDF
+            <Printer size={16} /> {isPrinting ? 'กำลังเตรียมพิมพ์...' : 'สั่งพิมพ์ A4 / เซฟ PDF'}
           </button>
 
           <button
@@ -851,13 +897,13 @@ export const PrintableOnetExamModal: React.FC<PrintableOnetExamModalProps> = ({
 
           <div className="p-3.5 bg-indigo-950/60 rounded-xl border border-indigo-800/50 text-[11px] text-indigo-300 leading-relaxed font-medium space-y-2">
             <div>
-              💡 <strong>คำแนะนำการพิมพ์ / เซฟ PDF:</strong>
+              💡 <strong>คำแนะนำการพิมพ์ / บันทึก PDF:</strong>
             </div>
             <ul className="list-disc pl-4 space-y-1 text-indigo-200">
-              <li>ระบบจัดข้อสอบขึ้นหน้าใหม่อัตโนมัติเมื่อเต็มหน้า A4</li>
-              <li>ในหน้าต่างสั่งพิมพ์ ให้เลือก <strong>Destination: Save as PDF</strong></li>
-              <li>แนะนำตั้งค่า <strong>Margins: Default (ปกติ)</strong> หรือ <strong>None</strong></li>
-              <li>หากเบราว์เซอร์ติดแถบเลื่อน ให้กดปุ่ม <strong>"พิมพ์หน้าต่างแยก"</strong> ด้านบน</li>
+              <li>ระบบแยกหน้าพิมพ์ A4 อัตโนมัติเมื่อข้อสอบเต็มหน้า ครบทุกหน้าสมบูรณ์</li>
+              <li>ในหน้าต่างสั่งพิมพ์ เลือกเครื่องพิมพ์เป็น <strong>Save as PDF (บันทึกเป็น PDF)</strong></li>
+              <li>ตั้งค่า Margins เป็น <strong>Default (ค่าเริ่มต้น)</strong> หรือ <strong>None</strong></li>
+              <li>ไม่มีแถบเลื่อนรบกวนในไฟล์ PDF หรือบนกระดาษพิมพ์จริง</li>
             </ul>
           </div>
         </div>

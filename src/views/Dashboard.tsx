@@ -14,6 +14,7 @@ import { CREATIVE_REWARDS, GRADE_LABELS } from '../constants';
 import { redeemReward, uploadAsset, manageStudent } from '../services/api';
 import { supabase } from '../services/firebaseConfig';
 import { PrintableOnetExamModal, ExamQuestionForPrint } from '../components/PrintableOnetExamModal';
+import { DEFAULT_NATIONAL_EXAM_QUESTIONS } from '../data/nationalExamDefaults';
 
 const safeParseDetails = (details: any): Record<string, any> => {
   if (!details) return {};
@@ -174,41 +175,26 @@ const Dashboard: React.FC<DashboardProps> = ({
   };
 
   const EXAM_LIST: Record<string, Array<{ name: string; color: string; icon: React.ReactNode; desc: string }>> = {
+      // ระดับชั้นประถมศึกษาปีที่ 3: เฉพาะข้อสอบ RT (Reading Test) และ NT
       'P3': [
-          { name: 'NT ภาษาไทย', color: 'bg-amber-500', icon: <BookOpen size={20}/>, desc: 'ความสามารถด้านภาษาและการอ่าน' },
-          { name: 'NT คณิตศาสตร์', color: 'bg-indigo-600', icon: <Calculator size={20}/>, desc: 'ความสามารถด้านการคิดคำนวณ' }
+          { name: 'RT การอ่านรู้เรื่อง', color: 'bg-teal-600', icon: <BookOpen size={20}/>, desc: 'การประเมินความสามารถในการอ่านรู้เรื่อง (Reading Test)' },
+          { name: 'RT การอ่านออกเสียง', color: 'bg-emerald-600', icon: <Languages size={20}/>, desc: 'การประเมินทักษะการอ่านออกเสียงคำและข้อความ' },
+          { name: 'NT ภาษาไทย', color: 'bg-amber-500', icon: <BookOpen size={20}/>, desc: 'การประเมินคุณภาพผู้เรียนด้านภาษาไทย' },
+          { name: 'NT คณิตศาสตร์', color: 'bg-indigo-600', icon: <Calculator size={20}/>, desc: 'การประเมินคุณภาพผู้เรียนด้านการคิดคำนวณ' }
       ],
+      // ระดับชั้นประถมศึกษาปีที่ 6: เฉพาะข้อสอบ O-NET ป.6
       'P6': [
           { name: 'O-NET ภาษาไทย', color: 'bg-amber-500', icon: <BookOpen size={20}/>, desc: 'การอ่าน คิดวิเคราะห์ และหลักภาษาไทย' },
           { name: 'O-NET คณิตศาสตร์', color: 'bg-rose-600', icon: <Calculator size={20}/>, desc: 'การแก้โจทย์ปัญหาและคำนวณ' },
           { name: 'O-NET วิทยาศาสตร์', color: 'bg-emerald-600', icon: <Atom size={20}/>, desc: 'กระบวนการทางวิทยาศาสตร์และการทดลอง' },
           { name: 'O-NET ภาษาอังกฤษ', color: 'bg-sky-500', icon: <Languages size={20}/>, desc: 'คำศัพท์ ไวยากรณ์ และการสื่อสาร' }
       ],
+      // ระดับชั้นมัธยมศึกษาปีที่ 3: เฉพาะข้อสอบ O-NET ม.3
       'M3': [
           { name: 'O-NET ภาษาไทย', color: 'bg-amber-500', icon: <BookOpen size={20}/>, desc: 'วรรณคดีและหลักภาษาไทย ม.3' },
           { name: 'O-NET คณิตศาสตร์', color: 'bg-rose-600', icon: <Calculator size={20}/>, desc: 'เรขาคณิต พีชคณิต สถิติและความน่าจะเป็น' },
           { name: 'O-NET วิทยาศาสตร์', color: 'bg-emerald-600', icon: <Atom size={20}/>, desc: 'ฟิสิกส์ เคมี ชีววิทยา และดาราศาสตร์' },
           { name: 'O-NET ภาษาอังกฤษ', color: 'bg-sky-500', icon: <Languages size={20}/>, desc: 'Reading Comprehension & Grammar' }
-      ],
-      'P1': [
-          { name: 'ภาษาไทย (เตรียมความพร้อม)', color: 'bg-amber-500', icon: <BookOpen size={20}/>, desc: 'การประสมคำ พยัญชนะ สระ และวรรณยุกต์' },
-          { name: 'คณิตศาสตร์ (เตรียมความพร้อม)', color: 'bg-rose-600', icon: <Calculator size={20}/>, desc: 'จำนวนนับ การบวกและการลบ' }
-      ],
-      'P2': [
-          { name: 'ภาษาไทย (เตรียมความพร้อม)', color: 'bg-amber-500', icon: <BookOpen size={20}/>, desc: 'คำมาตราตัวสะกด และการแต่งประโยค' },
-          { name: 'คณิตศาสตร์ (เตรียมความพร้อม)', color: 'bg-rose-600', icon: <Calculator size={20}/>, desc: 'การบวก ลบ คูณ และโจทย์ปัญหา' }
-      ],
-      'P4': [
-          { name: 'ภาษาไทย (มาตรฐาน สพฐ.)', color: 'bg-amber-500', icon: <BookOpen size={20}/>, desc: 'การอ่านจับใจความและชนิดของคำ' },
-          { name: 'คณิตศาสตร์ (มาตรฐาน สพฐ.)', color: 'bg-rose-600', icon: <Calculator size={20}/>, desc: 'จำนวนนับ ทศนิยม และเศษส่วน' },
-          { name: 'วิทยาศาสตร์ (มาตรฐาน สพฐ.)', color: 'bg-emerald-600', icon: <Atom size={20}/>, desc: 'สิ่งมีชีวิตและแรงในธรรมชาติ' },
-          { name: 'ภาษาอังกฤษ (มาตรฐาน สพฐ.)', color: 'bg-sky-500', icon: <Languages size={20}/>, desc: 'Daily Expressions & Vocabulary' }
-      ],
-      'P5': [
-          { name: 'ภาษาไทย (เตรียมสอบ O-NET)', color: 'bg-amber-500', icon: <BookOpen size={20}/>, desc: 'การวิเคราะห์ข้อความและสำนวนไทย' },
-          { name: 'คณิตศาสตร์ (เตรียมสอบ O-NET)', color: 'bg-rose-600', icon: <Calculator size={20}/>, desc: 'ร้อยละ บัญญัติไตรยางศ์ และรูปทรง' },
-          { name: 'วิทยาศาสตร์ (เตรียมสอบ O-NET)', color: 'bg-emerald-600', icon: <Atom size={20}/>, desc: 'ระบบนิเวศ พลังงาน และสารรอบตัว' },
-          { name: 'ภาษาอังกฤษ (เตรียมสอบ O-NET)', color: 'bg-sky-500', icon: <Languages size={20}/>, desc: 'Reading Comprehension & Grammar' }
       ]
   };
 
@@ -331,7 +317,8 @@ const Dashboard: React.FC<DashboardProps> = ({
       a.category === 'FINAL' || 
       a.category === 'ONET' || 
       a.category === 'NT' ||
-      (a.title && (a.title.includes('สอบ') || a.title.includes('O-NET') || a.title.includes('NT')))
+      a.category === 'RT' ||
+      (a.title && (a.title.includes('สอบ') || a.title.includes('O-NET') || a.title.includes('NT') || a.title.includes('RT')))
     );
   }, [myAllAssignments]);
 
@@ -363,7 +350,7 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       const uniqueSubjectNames = new Set<string>();
       questions.forEach(q => {
-          if (q.subject && !q.subject.startsWith('NT') && !q.subject.startsWith('O-NET')) {
+          if (q.subject && !q.subject.startsWith('NT') && !q.subject.startsWith('O-NET') && !q.subject.startsWith('RT')) {
               const qSchool = String(q.school || '').toLowerCase().trim();
               const qGrade = String(q.grade || '').toLowerCase().trim();
               if ((!qSchool || qSchool === cleanSchool) && (qGrade === cleanGrade || qGrade === 'all' || !qGrade)) {
@@ -393,27 +380,30 @@ const Dashboard: React.FC<DashboardProps> = ({
   }, [subjects, questions, student]);
 
   const hasFreeQuestions = (subjectName: string) => {
-      return questions.some(q => {
-          const subNameClean = String(subjectName || '').trim().toLowerCase();
-          const cleanSubName = subNameClean.replace('nt ', '').replace('o-net ', '').replace('onet ', '').trim();
-          const qSubjectClean = String(q.subject || '').trim().toLowerCase();
-          
-          const nameMatch = qSubjectClean === subNameClean || 
-                           qSubjectClean === cleanSubName || 
-                           subNameClean.includes(qSubjectClean) || 
-                           qSubjectClean.includes(cleanSubName);
-                           
-          const qGradeClean = String(q.grade || '').trim().toUpperCase();
-          const stuGradeClean = String(student.grade || '').trim().toUpperCase();
-          const gradeMatch = qGradeClean === stuGradeClean || qGradeClean === 'ALL' || !qGradeClean;
-          
-          return nameMatch && gradeMatch;
-      });
+    if (DEFAULT_NATIONAL_EXAM_QUESTIONS[subjectName] || Object.keys(DEFAULT_NATIONAL_EXAM_QUESTIONS).some(k => k.includes(subjectName) || subjectName.includes(k))) {
+      return true;
+    }
+    return questions.some(q => {
+      const subNameClean = String(subjectName || '').trim().toLowerCase();
+      const cleanSubName = subNameClean.replace('rt ', '').replace('nt ', '').replace('o-net ', '').replace('onet ', '').trim();
+      const qSubjectClean = String(q.subject || '').trim().toLowerCase();
+      
+      const nameMatch = qSubjectClean === subNameClean || 
+                       qSubjectClean === cleanSubName || 
+                       subNameClean.includes(qSubjectClean) || 
+                       (cleanSubName.length > 2 && qSubjectClean.includes(cleanSubName));
+                       
+      const qGradeClean = String(q.grade || '').trim().toUpperCase();
+      const stuGradeClean = String(student.grade || '').trim().toUpperCase();
+      const gradeMatch = qGradeClean === stuGradeClean || qGradeClean === 'ALL' || !qGradeClean;
+      
+      return nameMatch && gradeMatch;
+    });
   };
 
   const getUnlockedSetsCount = (subjectName: string) => {
       return assignments.filter(a => 
-        (a.category === 'ONET' || a.category === 'NT' || (a.title && (a.title.includes('O-NET') || a.title.includes('NT')))) && 
+        (a.category === 'ONET' || a.category === 'NT' || a.category === 'RT' || (a.title && (a.title.includes('O-NET') || a.title.includes('NT') || a.title.includes('RT')))) && 
         (a.subject === subjectName || (a.title && a.title.includes(subjectName))) && 
         doneAssignmentIds.has(String(a.id).trim())
       ).length;
@@ -422,17 +412,26 @@ const Dashboard: React.FC<DashboardProps> = ({
   // Function to open Printable Modal for an exam
   const handleOpenPrintModal = (examName: string) => {
     const cleanName = examName.toLowerCase().replace(/\(.*?\)/g, '').trim();
-    const baseName = cleanName.replace('o-net', '').replace('nt', '').replace('onet', '').trim();
+    const baseName = cleanName.replace('o-net', '').replace('nt', '').replace('rt', '').replace('onet', '').trim();
     
     // Find matching questions
-    const matched = questions.filter(q => {
+    let matched = questions.filter(q => {
       const qSub = (q.subject || '').toLowerCase().trim();
       const qGrade = (q.grade || '').toUpperCase().trim();
       const stuGrade = (student.grade || '').toUpperCase().trim();
       const gradeOk = qGrade === stuGrade || qGrade === 'ALL' || !q.grade;
-      const nameOk = qSub.includes(cleanName) || cleanName.includes(qSub) || qSub.includes(baseName) || baseName.includes(qSub);
+      const nameOk = qSub.includes(cleanName) || cleanName.includes(qSub) || (baseName.length > 2 && (qSub.includes(baseName) || baseName.includes(qSub)));
       return gradeOk && nameOk;
     });
+
+    // Fallback to default authentic standard questions
+    if (matched.length === 0) {
+      const defaults = DEFAULT_NATIONAL_EXAM_QUESTIONS[examName] || 
+                       Object.entries(DEFAULT_NATIONAL_EXAM_QUESTIONS).find(([k]) => k.includes(examName) || examName.includes(k))?.[1];
+      if (defaults && defaults.length > 0) {
+        matched = defaults;
+      }
+    }
 
     if (matched.length === 0) {
       alert(`ยังไม่มีชุดข้อสอบสำหรับ ${examName} ในระบบครับ คุณครูกำลังจัดเตรียมข้อสอบให้นะครับ`);
@@ -489,7 +488,8 @@ const Dashboard: React.FC<DashboardProps> = ({
     return index >= 0 ? index + 1 : null;
   }, [leaderboard, student.id]);
 
-  const exams = EXAM_LIST[student.grade as keyof typeof EXAM_LIST] || EXAM_LIST['P6'] || [];
+  // แสดงเฉพาะระดับชั้นที่กำหนด: RT & NT ป.3, O-NET ป.6 และ O-NET ม.3 (ระดับชั้นอื่นจะไม่แสดงส่วนนี้)
+  const exams = (student.grade && EXAM_LIST[student.grade]) ? EXAM_LIST[student.grade] : [];
 
   // Rewards View
   if (view === 'rewards') {
@@ -843,8 +843,9 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="space-y-3">
                   {displayedAssignments.map(hw => {
                       const isDone = doneAssignmentIds.has(String(hw.id).trim());
-                      const isNT = hw.category === 'NT' || (hw.subject && hw.subject.includes('NT'));
-                      const isONET = hw.category === 'ONET' || (hw.subject && hw.subject.includes('O-NET'));
+                      const isRT = hw.category === 'RT' || (hw.subject && hw.subject.includes('RT')) || (hw.title && hw.title.includes('RT'));
+                      const isNT = hw.category === 'NT' || (hw.subject && hw.subject.includes('NT')) || (hw.title && hw.title.includes('NT'));
+                      const isONET = hw.category === 'ONET' || (hw.subject && hw.subject.includes('O-NET')) || (hw.title && hw.title.includes('O-NET'));
                       const isMidterm = hw.category === 'MIDTERM' || (hw.title && hw.title.includes('กลางภาค'));
                       const isFinal = hw.category === 'FINAL' || (hw.title && hw.title.includes('ปลายภาค'));
                       const isLocked = hw.status === 'LOCKED';
@@ -854,7 +855,8 @@ const Dashboard: React.FC<DashboardProps> = ({
                       const scorePct = result ? Math.round((result.score / (result.totalQuestions || hw.questionCount || 1)) * 100) : null;
 
                       let catBadge = { label: 'แบบฝึกหัด', bg: 'bg-orange-100 text-orange-700' };
-                      if (isNT) catBadge = { label: 'สอบ NT', bg: 'bg-amber-100 text-amber-700' };
+                      if (isRT) catBadge = { label: 'สอบ RT', bg: 'bg-teal-100 text-teal-700' };
+                      else if (isNT) catBadge = { label: 'สอบ NT', bg: 'bg-amber-100 text-amber-700' };
                       else if (isONET) catBadge = { label: 'สอบ O-NET', bg: 'bg-indigo-100 text-indigo-700' };
                       else if (isMidterm) catBadge = { label: 'สอบกลางภาค', bg: 'bg-amber-100 text-amber-800' };
                       else if (isFinal) catBadge = { label: 'สอบปลายภาค', bg: 'bg-violet-100 text-violet-700' };
@@ -874,6 +876,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-inner flex-shrink-0 ${
                                   isDone ? 'bg-emerald-100 text-emerald-600' :
                                   isLocked ? 'bg-slate-200 text-slate-400' :
+                                  isRT ? 'bg-teal-100 text-teal-600' :
                                   isNT ? 'bg-amber-100 text-amber-600' :
                                   isONET ? 'bg-indigo-100 text-indigo-600' :
                                   isMidterm ? 'bg-amber-100 text-amber-600' :
@@ -882,7 +885,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                 }`}>
                                     {isDone ? <CheckCircle size={24}/> :
                                      isLocked ? <Lock size={22}/> :
-                                     isNT || isONET ? <ShieldCheck size={24}/> :
+                                     isRT || isNT || isONET ? <ShieldCheck size={24}/> :
                                      <FileText size={22}/>}
                                 </div>
                                 <div className="min-w-0 flex-1">
@@ -939,6 +942,7 @@ const Dashboard: React.FC<DashboardProps> = ({
                                     <button 
                                         onClick={() => onStartAssignment?.(hw)} 
                                         className={`w-full sm:w-auto px-6 py-2.5 rounded-xl font-black text-xs shadow-md transition active:scale-95 text-white border-b-4 flex items-center justify-center gap-1.5 ${
+                                            isRT ? 'bg-teal-600 hover:bg-teal-700 border-teal-900' : 
                                             isNT ? 'bg-amber-500 hover:bg-amber-600 border-amber-800' : 
                                             isONET ? 'bg-indigo-600 hover:bg-indigo-700 border-indigo-900' : 
                                             isMidterm ? 'bg-amber-600 hover:bg-amber-700 border-amber-900' : 
@@ -963,10 +967,17 @@ const Dashboard: React.FC<DashboardProps> = ({
               <div className="flex justify-between items-center px-1">
                   <div>
                     <h3 className="text-base sm:text-lg font-black text-slate-800 flex items-center gap-2">
-                      <Trophy className="text-indigo-600" size={22}/> ศูนย์เตรียมสอบระดับชาติ (O-NET / NT)
+                      <Trophy className="text-indigo-600" size={22}/> 
+                      {student.grade === 'P3' 
+                        ? 'ศูนย์เตรียมสอบระดับชาติ (RT / NT ป.3)' 
+                        : student.grade === 'M3' 
+                          ? 'ศูนย์เตรียมสอบระดับชาติ (O-NET ม.3)' 
+                          : 'ศูนย์เตรียมสอบระดับชาติ (O-NET ป.6)'}
                     </h3>
                     <p className="text-slate-500 text-xs font-bold">
-                      ฝึกทำข้อสอบจำลองออนไลน์ หรือสั่งพิมพ์แบบ A4 และกระดาษคำตอบมาตรฐานเพื่อฝึกทำบนกระดาษ
+                      {student.grade === 'P3'
+                        ? 'ฝึกทำข้อสอบประเมินความสามารถในการอ่าน (RT) และประเมินคุณภาพผู้เรียน (NT) พร้อมสั่งพิมพ์ A4 และกระดาษคำตอบ'
+                        : 'ฝึกทำข้อสอบจำลองออนไลน์ หรือสั่งพิมพ์แบบ A4 และกระดาษคำตอบมาตรฐานเพื่อฝึกทำบนกระดาษ'}
                     </p>
                   </div>
               </div>

@@ -601,7 +601,7 @@ export const getQuestionsBySubjectAndGrade = async (subject: string, grade: stri
         const res = await apiCall('getQuestionsBySubjectAndGrade', { subject, grade, school });
         return (res.data || [])
             .map(mapQuestionFromDB)
-            .filter((q: any) => !q.subject.includes('O-NET') && !q.subject.includes('NT'));
+            .filter((q: any) => !q.subject.includes('O-NET') && !q.subject.includes('NT') && !q.subject.includes('RT'));
     } catch (e) {
         return [];
     }

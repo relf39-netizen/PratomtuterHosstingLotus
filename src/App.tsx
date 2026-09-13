@@ -13,6 +13,7 @@ import { Student, Question, Teacher, ExamResult, Assignment, SubjectConfig, Assi
 import { fetchAppData, saveScore, getDataForStudent, getTeacherById, getAppSettings } from './services/api';
 import { Database, Download } from 'lucide-react';
 import { isConfigured, supabase } from './services/firebaseConfig';
+import { DEFAULT_NATIONAL_EXAM_QUESTIONS } from './data/nationalExamDefaults';
 
 const App: React.FC = () => {
   // --- STATE ---
@@ -252,8 +253,8 @@ const App: React.FC = () => {
   };
 
   const handleFinishExam = async (score: number, total: number, returnedAssignmentId?: string, category?: AssignmentCategory, details?: any[]) => {
-    const activeCategory = category || currentAssignmentRef.current?.category || (selectedSubject?.name.includes('NT') ? 'NT' : selectedSubject?.name.includes('O-NET') ? 'ONET' : 'GENERAL');
-    const isExam = activeCategory === 'EXAM' || activeCategory === 'NT' || activeCategory === 'ONET' || activeCategory === 'MIDTERM' || activeCategory === 'FINAL';
+    const activeCategory = category || currentAssignmentRef.current?.category || (selectedSubject?.name.includes('RT') ? 'RT' : selectedSubject?.name.includes('NT') ? 'NT' : selectedSubject?.name.includes('O-NET') ? 'ONET' : 'GENERAL');
+    const isExam = activeCategory === 'EXAM' || activeCategory === 'NT' || activeCategory === 'RT' || activeCategory === 'ONET' || activeCategory === 'MIDTERM' || activeCategory === 'FINAL';
     
     let starsEarned = 0;
     if (total > 0) {
@@ -382,24 +383,24 @@ const App: React.FC = () => {
                       qList = qList.slice(0, currentAssignment.questionCount);
                   }
               } else if (selectedSubject) {
-                  const isNational = selectedSubject.name.includes('O-NET') || selectedSubject.name.includes('NT');
+                  const isNational = selectedSubject.name.includes('O-NET') || selectedSubject.name.includes('NT') || selectedSubject.name.includes('RT');
                   
                   if (isNational) {
                       const doneAssignmentIds = new Set(examResults.filter(r => r.assignmentId).map(r => String(r.assignmentId).trim()));
                       const completedNationalAssignments = assignments.filter(a => 
-                          (a.category === 'ONET' || a.category === 'NT') && 
+                          (a.category === 'ONET' || a.category === 'NT' || a.category === 'RT') && 
                           a.subject === selectedSubject.name &&
                           doneAssignmentIds.has(String(a.id).trim())
                       );
                       const completedIds = completedNationalAssignments.map(a => String(a.id).trim());
                       
-                      // ดึงข้อสอบของหัวข้อ O-NET/NT จาก Assignment ที่ทำเสร็จแล้ว
+                      // ดึงข้อสอบของหัวข้อ O-NET/NT/RT จาก Assignment ที่ทำเสร็จแล้ว
                       const completedAssignQuestions = questions.filter(q => q.assignment_id && completedIds.includes(String(q.assignment_id).trim()));
                       
-                      // และรวมกับข้อสอบ O-NET/NT อิสระในคลังที่ไม่ได้ผูกกับ assignment_id ใดๆ หรือ assignment_id เป็นเงื่อนไขอิสระเพื่อให้พร้อมทำทันที
+                      // และรวมกับข้อสอบ O-NET/NT/RT อิสระในคลังที่ไม่ได้ผูกกับ assignment_id ใดๆ หรือ assignment_id เป็นเงื่อนไขอิสระเพื่อให้พร้อมทำทันที
                       const freeNationalQuestions = questions.filter(q => {
                           const subNameClean = String(selectedSubject.name || '').trim().toLowerCase();
-                          const cleanSubName = subNameClean.replace('nt ', '').replace('o-net ', '').replace('onet ', '').trim();
+                          const cleanSubName = subNameClean.replace('rt ', '').replace('nt ', '').replace('o-net ', '').replace('onet ', '').trim();
                           const qSubjectClean = String(q.subject || '').trim().toLowerCase();
                           
                           const nameMatch = qSubjectClean === subNameClean || 
@@ -417,7 +418,17 @@ const App: React.FC = () => {
                       });
                       
                       qList = [...completedAssignQuestions, ...freeNationalQuestions];
-                      derivedCategory = selectedSubject.name.includes('NT') ? 'NT' : 'ONET';
+
+                      // หากยังไม่มีข้อสอบในระบบ ให้ใช้ชุดข้อสอบมาตรฐานเริ่มต้น (RT/NT/O-NET)
+                      if (qList.length === 0) {
+                          const defaults = DEFAULT_NATIONAL_EXAM_QUESTIONS[selectedSubject.name] || 
+                                           Object.entries(DEFAULT_NATIONAL_EXAM_QUESTIONS).find(([k]) => k.includes(selectedSubject.name) || selectedSubject.name.includes(k))?.[1];
+                          if (defaults && defaults.length > 0) {
+                              qList = [...defaults];
+                          }
+                      }
+
+                      derivedCategory = selectedSubject.name.includes('RT') ? 'RT' : selectedSubject.name.includes('NT') ? 'NT' : 'ONET';
                       qList = qList.sort(() => 0.5 - Math.random());
                   } else {
                       derivedCategory = 'GENERAL';
